@@ -1,0 +1,8 @@
+gspread
+oauth2client
+"fuzzywuzzy[speedup]"
+easyocr
+opencv-python
+matplotlib
+torch
+torchvision
