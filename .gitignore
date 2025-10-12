@@ -155,3 +155,8 @@ credentials.json
 test.png
 test_ocr.png
 Screenshot*.png
+
+# pytorch lightning logs
+**/lightning_logs/**
+# model checkpoints
+**.pt

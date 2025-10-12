@@ -29,6 +29,9 @@ DATA_WORKSHEET_NAME = config.get('GoogleSheets', 'data_worksheet_name')
 SCORE_CUTOFF = config.getint('Settings', 'score_cutoff')
 EMOJI_THRESHOLD = config.getfloat('Settings', 'emoji_threshold')
 
+# Discord
+WEBHOOK_URL = config.get('Discord', 'webhook_url')
+
 # Drawing Colors (BGR format)
 BBOX_COLOR = (0, 255, 0)  # Green
 TEXT_COLOR = (255, 0, 0)  # Blue
