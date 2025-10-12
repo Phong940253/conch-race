@@ -135,6 +135,15 @@ def draw_ocr_results(image, results, x_offset, y_offset):
         cv2.rectangle(image, abs_top_left, (bottom_right[0] + x_offset, bottom_right[1] + y_offset), BBOX_COLOR, 2)
         cv2.putText(image, text, abs_top_left, cv2.FONT_HERSHEY_SIMPLEX, 0.5, TEXT_COLOR, 2)
 
+def preprocess_for_ocr(image):
+    """Applies preprocessing steps to an image to improve OCR accuracy."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Only apply light enhancement
+    enhanced = cv2.convertScaleAbs(gray, alpha=1.2, beta=10)
+    
+    return enhanced
+
 def process_image_grid(img, reader):
     """Processes the grid of regions on the image for OCR and emoji detection."""
     ocr_data = {}
@@ -148,7 +157,15 @@ def process_image_grid(img, reader):
             if y + RECT_HEIGHT <= img_height and x + RECT_WIDTH <= img_width:
                 region_img = img[y:y+RECT_HEIGHT, x:x+RECT_WIDTH]
                 emoji = detect_emoji(region_img)
-                results = perform_ocr_on_region(reader, region_img)
+                
+                # Preprocess the image for better OCR results
+                preprocessed_region = preprocess_for_ocr(region_img)
+                
+                # debug: show preprocessed image
+                # plt.imshow(preprocessed_region, cmap='gray')
+                # plt.show()
+                
+                results = perform_ocr_on_region(reader, preprocessed_region)
                 
                 if len(results) >= 2:
                     name = find_best_match(results[0][1], LIST_CONCH)
