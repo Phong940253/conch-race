@@ -1,0 +1,39 @@
+import torch
+from sklearn.preprocessing import LabelEncoder
+import logging
+from common import ConchPredictor, parse_rate_emoji
+from config import MODEL_PATH
+
+def load_model():
+    """Loads the prediction model and its components."""
+    try:
+        checkpoint = torch.load(MODEL_PATH, weights_only=False)
+        model = ConchPredictor(checkpoint["input_dim"], checkpoint["num_classes"])
+        model.load_state_dict(checkpoint["model_state_dict"])
+        model.eval()
+        label_encoder = LabelEncoder()
+        label_encoder.classes_ = checkpoint["label_encoder"]
+        players = checkpoint["players"]
+        logging.info(f"Model '{MODEL_PATH}' loaded successfully.")
+        return model, label_encoder, players
+    except FileNotFoundError:
+        logging.error(f"Model file not found at '{MODEL_PATH}'.")
+        return None, None, None
+
+def predict_winner(model, label_encoder, players, data):
+    """Predicts the winner based on the OCR data."""
+    features = []
+    for p in players:
+        conch_info = data.get(p)
+        if conch_info:
+            # The model expects a percentage, so we add it here for parsing
+            rate, emo = parse_rate_emoji(f"{conch_info['rate']}% {conch_info['emoji']}")
+            features.extend([rate, emo])
+        else:
+            features.extend([0.0, 0.0])
+    
+    x = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
+    with torch.no_grad():
+        logits = model(x)
+        pred = logits.argmax(dim=1).item()
+    return label_encoder.inverse_transform([pred])[0]
