@@ -39,7 +39,7 @@ GRID_COLOR = (0, 0, 255)  # Red
 
 LIST_CONCH = [
     "Karl, the Fatebringer", "Fiery Conch Warrior", "B.Erserker", "Captain Blackhat",
-    "Galloping Tractor", "Gold Miner", "Conchie", "Crazy Conch", "Poseidon", "Deja Vu"
+    "Galloping Tractor", "Gold Miner", "Conchie", "Crazy Conch", "Poseidonn", "Deja Vu"
 ]
 
 DICT_EMOJI = {

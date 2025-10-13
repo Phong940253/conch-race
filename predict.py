@@ -5,6 +5,7 @@
 # --- 1. Setup ---
 import pandas as pd
 import torch
+import torch.nn.functional as F
 from sklearn.preprocessing import LabelEncoder
 import urllib.parse
 from common import ConchPredictor, parse_rate_emoji, SHEET_ID, SHEET_NAME
@@ -55,14 +56,21 @@ def predict_winner(model, row, players, label_encoder):
     
     with torch.no_grad():
         logits = model(x)
+        probabilities = F.softmax(logits, dim=1)
         pred = logits.argmax(dim=1).item()
         
-    return label_encoder.inverse_transform([pred])[0]
+    winner = label_encoder.inverse_transform([pred])[0]
+    return winner, probabilities
 
 # Predict on the latest race
-predicted_winner = predict_winner(model, latest_race, players, label_enc)
+predicted_winner, predictions = predict_winner(model, latest_race, players, label_enc)
 
 print("\n--- Latest Race Data ---")
 print(latest_race)
 print("\n--- Prediction ---")
 print(f"🔮 Predicted Winner: {predicted_winner}")
+
+print("\n--- Prediction Rates ---")
+for i, conch in enumerate(label_enc.classes_):
+    rate = predictions[0][i].item() * 100
+    print(f"{conch}: {rate:.2f}%")

@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from sklearn.preprocessing import LabelEncoder
 import logging
 from common import ConchPredictor, parse_rate_emoji
@@ -21,7 +22,7 @@ def load_model():
         return None, None, None
 
 def predict_winner(model, label_encoder, players, data):
-    """Predicts the winner based on the OCR data."""
+    """Predicts the winner and probabilities based on the OCR data."""
     features = []
     for p in players:
         conch_info = data.get(p)
@@ -35,5 +36,8 @@ def predict_winner(model, label_encoder, players, data):
     x = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
     with torch.no_grad():
         logits = model(x)
+        probabilities = F.softmax(logits, dim=1)
         pred = logits.argmax(dim=1).item()
-    return label_encoder.inverse_transform([pred])[0]
+        
+    winner = label_encoder.inverse_transform([pred])[0]
+    return winner, probabilities

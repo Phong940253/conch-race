@@ -79,8 +79,9 @@ def main():
     logging.info(f"OCR Data: {ocr_data}")
     
     prediction = None
+    probabilities = None
     if model:
-        prediction = predict_winner(model, label_encoder, players, ocr_data)
+        prediction, probabilities = predict_winner(model, label_encoder, players, ocr_data)
         logging.info(f"Predicted Winner: {prediction}")
     
     if args.debug:
@@ -93,7 +94,7 @@ def main():
         save_to_sheet(ocr_data, DATA_WORKSHEET_NAME, include_rate=True, prediction=prediction, check_duplicates=False)
         
     if ocr_data and args.send_discord:
-        send_discord_notification(ocr_data, prediction, debug=args.debug)
+        send_discord_notification(ocr_data, prediction, probabilities, label_encoder, debug=args.debug)
 
     cv2.imwrite(OUTPUT_PATH, img)
     logging.info(f"Processed image saved to {OUTPUT_PATH}")
