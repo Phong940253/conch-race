@@ -3,11 +3,7 @@ import cv2
 import logging
 import argparse
 import matplotlib.pyplot as plt
-from config import (
-    IMAGE_PATH, OUTPUT_PATH, WORKSHEET_NAME, DATA_WORKSHEET_NAME,
-    ROWS, COLS, START_X, START_Y, RECT_WIDTH, RECT_HEIGHT, PADDING,
-    GRID_COLOR, LIST_CONCH
-)
+from config import load_config
 from vision import (
     detect_emoji, perform_ocr_on_region, find_best_match, draw_ocr_results, preprocess_for_ocr
 )
@@ -61,10 +57,20 @@ def process_image_grid(img, reader, debug=False):
 def main():
     """Main function to run the OCR process."""
     parser = argparse.ArgumentParser(description="Conch Race OCR and Prediction")
+    parser.add_argument("-c", "--config", type=str, default="config.ini", help="Path to the configuration file.")
     parser.add_argument("-i", "--image", type=str, help="Path to the image file to process.")
     parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode to visualize the first preprocessed image and skip saving to sheets.")
     parser.add_argument("-s", "--send-discord", action="store_true", help="Send a notification to Discord.")
     args = parser.parse_args()
+
+    load_config(args.config)
+
+    # Now that the config is loaded, we can import the variables
+    from config import (
+        IMAGE_PATH, OUTPUT_PATH, WORKSHEET_NAME, DATA_WORKSHEET_NAME,
+        ROWS, COLS, START_X, START_Y, RECT_WIDTH, RECT_HEIGHT, PADDING,
+        GRID_COLOR, LIST_CONCH
+    )
 
     image_path = args.image if args.image else IMAGE_PATH
 

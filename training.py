@@ -65,7 +65,7 @@ class ConchDataset(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
 
-X_train, X_val, y_train, y_val = train_test_split(X, y_enc, test_size=0.2, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(X, y_enc, test_size=0.1, random_state=42)
 train_ds = ConchDataset(X_train, y_train)
 val_ds = ConchDataset(X_val, y_val)
 
