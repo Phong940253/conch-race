@@ -1,16 +1,13 @@
 import cv2
 import os
 from fuzzywuzzy import process
-from config import (
-    EMOJI_THRESHOLD, DICT_EMOJI, SCORE_CUTOFF, BBOX_COLOR, TEXT_COLOR
-)
 
-def detect_emoji(image):
+def detect_emoji(image, dict_emoji, emoji_threshold):
     """Detects an emoji in the image using template matching."""
     gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    best_match = {'icon': DICT_EMOJI['sad']['icon'], 'score': EMOJI_THRESHOLD}
+    best_match = {'icon': dict_emoji['sad']['icon'], 'score': emoji_threshold}
 
-    for emoji_info in DICT_EMOJI.values():
+    for emoji_info in dict_emoji.values():
         if not os.path.exists(emoji_info['path']):
             continue
         template = cv2.imread(emoji_info['path'], 0)
@@ -29,24 +26,24 @@ def detect_emoji(image):
             
     return best_match['icon']
 
-def find_best_match(text, choices):
+def find_best_match(text, choices, score_cutoff):
     """Finds the best match for a text from a list of choices."""
     match = process.extractOne(text, choices)
-    return match[0] if match and match[1] >= SCORE_CUTOFF else None
+    return match[0] if match and match[1] >= score_cutoff else None
 
 def perform_ocr_on_region(reader, image):
     """Performs OCR on a cropped region of the image."""
     return reader.readtext(image)
 
-def draw_ocr_results(image, results, x_offset, y_offset):
+def draw_ocr_results(image, results, x_offset, y_offset, bbox_color, text_color):
     """Draws OCR results on the image."""
     for detection in results:
         top_left = tuple(map(int, detection[0][0]))
         bottom_right = tuple(map(int, detection[0][2]))
         text = detection[1]
         abs_top_left = (top_left[0] + x_offset, top_left[1] + y_offset)
-        cv2.rectangle(image, abs_top_left, (bottom_right[0] + x_offset, bottom_right[1] + y_offset), BBOX_COLOR, 2)
-        cv2.putText(image, text, abs_top_left, cv2.FONT_HERSHEY_SIMPLEX, 0.5, TEXT_COLOR, 2)
+        cv2.rectangle(image, abs_top_left, (bottom_right[0] + x_offset, bottom_right[1] + y_offset), bbox_color, 2)
+        cv2.putText(image, text, abs_top_left, cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2)
 
 def preprocess_for_ocr(image):
     """Applies preprocessing steps to an image to improve OCR accuracy."""

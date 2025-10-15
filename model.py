@@ -3,22 +3,21 @@ import torch.nn.functional as F
 from sklearn.preprocessing import LabelEncoder
 import logging
 from common import ConchPredictor, parse_rate_emoji
-from config import MODEL_PATH
 
-def load_model():
+def load_model(model_path):
     """Loads the prediction model and its components."""
     try:
-        checkpoint = torch.load(MODEL_PATH, weights_only=False)
+        checkpoint = torch.load(model_path, weights_only=False)
         model = ConchPredictor(checkpoint["input_dim"], checkpoint["num_classes"])
         model.load_state_dict(checkpoint["model_state_dict"])
         model.eval()
         label_encoder = LabelEncoder()
         label_encoder.classes_ = checkpoint["label_encoder"]
         players = checkpoint["players"]
-        logging.info(f"Model '{MODEL_PATH}' loaded successfully.")
+        logging.info(f"Model '{model_path}' loaded successfully.")
         return model, label_encoder, players
     except FileNotFoundError:
-        logging.error(f"Model file not found at '{MODEL_PATH}'.")
+        logging.error(f"Model file not found at '{model_path}'.")
         return None, None, None
 
 def predict_winner(model, label_encoder, players, data):

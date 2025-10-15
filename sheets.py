@@ -2,23 +2,22 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import logging
-from config import CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH
 
-def save_to_sheet(data, worksheet_name, include_rate=False, prediction=None, check_duplicates=True):
+def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch, include_rate=False, prediction=None, check_duplicates=True):
     """Saves the OCR data to a Google Sheet."""
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_PATH, scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_path, scope)
         client = gspread.authorize(creds)
-        sheet = client.open(SHEET_NAME).worksheet(worksheet_name)
+        sheet = client.open(sheet_name).worksheet(worksheet_name)
         
-        header = ["Timestamp"] + LIST_CONCH
+        header = ["Timestamp"] + list_conch
         if prediction:
             header.append("Predicted Winner")
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         row_data = [timestamp]
-        for name in LIST_CONCH:
+        for name in list_conch:
             conch_info = data.get(name)
             if conch_info:
                 cell_value = conch_info.get('emoji', '')

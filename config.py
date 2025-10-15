@@ -23,13 +23,18 @@ TEXT_COLOR = None
 GRID_COLOR = None
 LIST_CONCH = None
 DICT_EMOJI = None
+NOISE_X1 = None
+NOISE_Y1 = None
+NOISE_X2 = None
+NOISE_Y2 = None
 
 def load_config(config_file='config.ini'):
     """Loads configuration from the specified file and populates global variables."""
     global IMAGE_PATH, OUTPUT_PATH, CREDENTIALS_PATH, MODEL_PATH, START_X, START_Y, \
            RECT_WIDTH, RECT_HEIGHT, PADDING, ROWS, COLS, SHEET_NAME, WORKSHEET_NAME, \
            DATA_WORKSHEET_NAME, SCORE_CUTOFF, EMOJI_THRESHOLD, WEBHOOK_URL, \
-           BBOX_COLOR, TEXT_COLOR, GRID_COLOR, LIST_CONCH, DICT_EMOJI
+           BBOX_COLOR, TEXT_COLOR, GRID_COLOR, LIST_CONCH, DICT_EMOJI, \
+           NOISE_X1, NOISE_Y1, NOISE_X2, NOISE_Y2
 
     config = configparser.ConfigParser()
     config.read(config_file)
@@ -61,6 +66,12 @@ def load_config(config_file='config.ini'):
 
     # Discord
     WEBHOOK_URL = config.get('Discord', 'webhook_url')
+
+    # Noise Removal
+    NOISE_X1 = config.getint('NoiseRemoval', 'x1')
+    NOISE_Y1 = config.getint('NoiseRemoval', 'y1')
+    NOISE_X2 = config.getint('NoiseRemoval', 'x2')
+    NOISE_Y2 = config.getint('NoiseRemoval', 'y2')
 
     # Drawing Colors (BGR format)
     BBOX_COLOR = (0, 255, 0)  # Green

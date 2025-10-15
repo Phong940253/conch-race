@@ -16,9 +16,33 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def process_image_grid(img, reader, debug=False):
     """Processes the grid of regions on the image for OCR and emoji detection."""
+    from config import (
+        ROWS, COLS, START_X, START_Y, RECT_WIDTH, RECT_HEIGHT, PADDING,
+        GRID_COLOR, LIST_CONCH, DICT_EMOJI, EMOJI_THRESHOLD, SCORE_CUTOFF,
+        BBOX_COLOR, TEXT_COLOR, NOISE_X1, NOISE_Y1, NOISE_X2, NOISE_Y2
+    )
     ocr_data = {}
     img_height, img_width, _ = img.shape
     first_region_processed = False
+
+    if debug:
+        debug_img = img.copy()
+        region_count = 0
+        for row in range(ROWS):
+            for col in range(COLS):
+                if region_count >= 6:
+                    break
+                x = START_X + col * (RECT_WIDTH + PADDING)
+                y = START_Y + row * (RECT_HEIGHT + PADDING)
+                if y + RECT_HEIGHT <= img_height and x + RECT_WIDTH <= img_width:
+                    cv2.rectangle(debug_img, (x, y), (x + RECT_WIDTH, y + RECT_HEIGHT), GRID_COLOR, 2)
+                    region_count += 1
+            if region_count >= 6:
+                break
+        
+        plt.imshow(cv2.cvtColor(debug_img, cv2.COLOR_BGR2RGB))
+        plt.title("First 6 OCR Regions")
+        plt.show()
 
     for row in range(ROWS):
         for col in range(COLS):
@@ -29,9 +53,9 @@ def process_image_grid(img, reader, debug=False):
                 region_img = img[y:y+RECT_HEIGHT, x:x+RECT_WIDTH]
                 
                 # Remove noise by drawing a white rectangle over the specified area
-                cv2.rectangle(region_img, (20, 160), (46, 187), (255, 255, 255), -1)
+                cv2.rectangle(region_img, (NOISE_X1, NOISE_Y1), (NOISE_X2, NOISE_Y2), (255, 255, 255), -1)
                 
-                emoji = detect_emoji(region_img)
+                emoji = detect_emoji(region_img, DICT_EMOJI, EMOJI_THRESHOLD)
                 
                 # Preprocess the image for better OCR results
                 preprocessed_region = preprocess_for_ocr(region_img)
@@ -45,11 +69,11 @@ def process_image_grid(img, reader, debug=False):
                 results = perform_ocr_on_region(reader, preprocessed_region)
                 
                 if len(results) >= 2:
-                    name = find_best_match(results[0][1], LIST_CONCH)
+                    name = find_best_match(results[0][1], LIST_CONCH, SCORE_CUTOFF)
                     if name:
                         ocr_data[name] = {'rate': results[1][1], 'emoji': emoji}
                 
-                draw_ocr_results(img, results, x, y)
+                draw_ocr_results(img, results, x, y, BBOX_COLOR, TEXT_COLOR)
                 cv2.rectangle(img, (x, y), (x + RECT_WIDTH, y + RECT_HEIGHT), GRID_COLOR, 2)
     
     return ocr_data
@@ -68,13 +92,13 @@ def main():
     # Now that the config is loaded, we can import the variables
     from config import (
         IMAGE_PATH, OUTPUT_PATH, WORKSHEET_NAME, DATA_WORKSHEET_NAME,
-        ROWS, COLS, START_X, START_Y, RECT_WIDTH, RECT_HEIGHT, PADDING,
-        GRID_COLOR, LIST_CONCH
+        MODEL_PATH, DICT_EMOJI, EMOJI_THRESHOLD, SCORE_CUTOFF, BBOX_COLOR, TEXT_COLOR,
+        CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, WEBHOOK_URL
     )
 
     image_path = args.image if args.image else IMAGE_PATH
 
-    model, label_encoder, players = load_model()
+    model, label_encoder, players = load_model(MODEL_PATH)
     reader = easyocr.Reader(['en'])
     img = cv2.imread(image_path)
     if img is None:
@@ -94,13 +118,13 @@ def main():
         logging.info("Debug mode is enabled. Skipping save to Google Sheets.")
     elif ocr_data:
         # Save to the sheet with emojis only, with duplicate checking
-        save_to_sheet(ocr_data, WORKSHEET_NAME, include_rate=False, check_duplicates=True)
+        save_to_sheet(ocr_data, WORKSHEET_NAME, CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, include_rate=False, check_duplicates=True)
         
         # Save to the data sheet with rates, emojis, and prediction, without duplicate checking
-        save_to_sheet(ocr_data, DATA_WORKSHEET_NAME, include_rate=True, prediction=prediction, check_duplicates=False)
+        save_to_sheet(ocr_data, DATA_WORKSHEET_NAME, CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, include_rate=True, prediction=prediction, check_duplicates=False)
         
     if ocr_data and args.send_discord:
-        send_discord_notification(ocr_data, prediction, probabilities, label_encoder, debug=args.debug)
+        send_discord_notification(ocr_data, prediction, probabilities, label_encoder, WEBHOOK_URL, debug=args.debug)
 
     cv2.imwrite(OUTPUT_PATH, img)
     logging.info(f"Processed image saved to {OUTPUT_PATH}")

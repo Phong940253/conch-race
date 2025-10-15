@@ -1,8 +1,7 @@
 import requests
 import logging
-from config import WEBHOOK_URL
 
-def send_discord_notification(data, prediction, probabilities, label_encoder, debug=False):
+def send_discord_notification(data, prediction, probabilities, label_encoder, webhook_url, debug=False):
     """Sends a notification to a Discord webhook with the race results and prediction rates."""
     try:
         embed = {
@@ -56,7 +55,7 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, de
                 })
 
         payload = {"embeds": [embed]}
-        response = requests.post(WEBHOOK_URL, json=payload)
+        response = requests.post(webhook_url, json=payload)
         response.raise_for_status()
         logging.info("Discord notification sent successfully.")
     except Exception as e:
