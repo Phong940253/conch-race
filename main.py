@@ -10,6 +10,10 @@ from vision import (
 from model import load_model, predict_winner
 from sheets import save_to_sheet
 from discord import send_discord_notification
+import schedule
+import time
+from automation import click_refresh_button, capture_window
+from utils import run_training
 
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -78,34 +82,22 @@ def process_image_grid(img, reader, debug=False):
     
     return ocr_data
 
-def main():
-    """Main function to run the OCR process."""
-    parser = argparse.ArgumentParser(description="Conch Race OCR and Prediction")
-    parser.add_argument("-c", "--config", type=str, default="config.ini", help="Path to the configuration file.")
-    parser.add_argument("-i", "--image", type=str, help="Path to the image file to process.")
-    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode to visualize the first preprocessed image and skip saving to sheets.")
-    parser.add_argument("-s", "--send-discord", action="store_true", help="Send a notification to Discord.")
-    args = parser.parse_args()
-
-    load_config(args.config)
-
-    # Now that the config is loaded, we can import the variables
+def run_ocr_process(debug=False, send_discord=False):
+    """Runs the complete OCR and prediction process on a captured image."""
     from config import (
-        IMAGE_PATH, OUTPUT_PATH, WORKSHEET_NAME, DATA_WORKSHEET_NAME,
-        MODEL_PATH, DICT_EMOJI, EMOJI_THRESHOLD, SCORE_CUTOFF, BBOX_COLOR, TEXT_COLOR,
-        CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, WEBHOOK_URL
+        OUTPUT_PATH, WORKSHEET_NAME, DATA_WORKSHEET_NAME,
+        MODEL_PATH, CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, WEBHOOK_URL
     )
-
-    image_path = args.image if args.image else IMAGE_PATH
+    
+    img = capture_window()
+    if img is None:
+        logging.error("Failed to capture window for OCR.")
+        return
 
     model, label_encoder, players = load_model(MODEL_PATH)
     reader = easyocr.Reader(['en'])
-    img = cv2.imread(image_path)
-    if img is None:
-        logging.error(f"Could not read image from {image_path}")
-        return
 
-    ocr_data = process_image_grid(img, reader, debug=args.debug)
+    ocr_data = process_image_grid(img, reader, debug=debug)
     logging.info(f"OCR Data: {ocr_data}")
     
     prediction = None
@@ -114,20 +106,106 @@ def main():
         prediction, probabilities = predict_winner(model, label_encoder, players, ocr_data)
         logging.info(f"Predicted Winner: {prediction}")
     
-    if args.debug:
+    if debug:
         logging.info("Debug mode is enabled. Skipping save to Google Sheets.")
     elif ocr_data:
-        # Save to the sheet with emojis only, with duplicate checking
         save_to_sheet(ocr_data, WORKSHEET_NAME, CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, include_rate=False, check_duplicates=True)
-        
-        # Save to the data sheet with rates, emojis, and prediction, without duplicate checking
         save_to_sheet(ocr_data, DATA_WORKSHEET_NAME, CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, include_rate=True, prediction=prediction, check_duplicates=False)
         
-    if ocr_data and args.send_discord:
-        send_discord_notification(ocr_data, prediction, probabilities, label_encoder, WEBHOOK_URL, debug=args.debug)
+    if ocr_data and send_discord:
+        send_discord_notification(ocr_data, prediction, probabilities, label_encoder, WEBHOOK_URL, debug=debug)
 
     cv2.imwrite(OUTPUT_PATH, img)
     logging.info(f"Processed image saved to {OUTPUT_PATH}")
+
+def scheduled_ocr_task(debug=False, send_discord=False):
+    """Task for scheduled OCR runs, including clicking refresh."""
+    logging.info("Running scheduled OCR task...")
+    if click_refresh_button():
+        time.sleep(5)
+        run_ocr_process(debug, send_discord)
+
+def main():
+    """Main function to run the OCR process."""
+    parser = argparse.ArgumentParser(description="Conch Race OCR and Prediction")
+    parser.add_argument("-c", "--config", type=str, default="config.ini", help="Path to the configuration file.")
+    parser.add_argument("-i", "--image", type=str, help="Path to the image file to process.")
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode to visualize the first preprocessed image and skip saving to sheets.")
+    parser.add_argument("-s", "--send-discord", action="store_true", help="Send a notification to Discord.")
+    parser.add_argument("--schedule", action="store_true", help="Run in schedule mode.")
+    args = parser.parse_args()
+
+    load_config(args.config)
+
+    if args.schedule:
+        logging.info("Running in schedule mode.")
+        
+        # Schedule OCR tasks
+        for hour in [11, 18]:
+            for minute in [4, 19, 29, 59]:
+                schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(scheduled_ocr_task, debug=args.debug, send_discord=args.send_discord)
+        for hour in [12, 19]:
+            for minute in [19, 29]:
+                schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(scheduled_ocr_task, debug=args.debug, send_discord=args.send_discord)
+
+        # Schedule training tasks
+        for hour in [11, 18]:
+            for minute in [3, 17, 27, 57]:
+                schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(run_training)
+        for hour in [12, 19]:
+            for minute in [17, 27]:
+                schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(run_training)
+        
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+    else:
+        # Now that the config is loaded, we can import the variables
+        from config import (
+            IMAGE_PATH, OUTPUT_PATH, WORKSHEET_NAME, DATA_WORKSHEET_NAME,
+            MODEL_PATH, DICT_EMOJI, EMOJI_THRESHOLD, SCORE_CUTOFF, BBOX_COLOR, TEXT_COLOR,
+            CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, WEBHOOK_URL
+        )
+
+        image_path = args.image if args.image else IMAGE_PATH
+
+        model, label_encoder, players = load_model(MODEL_PATH)
+        reader = easyocr.Reader(['en'])
+        
+        if args.image:
+            img = cv2.imread(image_path)
+            if img is None:
+                logging.error(f"Could not read image from {image_path}")
+                return
+        else:
+            img = capture_window()
+            if img is None:
+                logging.error("Could not capture the window.")
+                return
+
+        ocr_data = process_image_grid(img, reader, debug=args.debug)
+        logging.info(f"OCR Data: {ocr_data}")
+        
+        prediction = None
+        probabilities = None
+        if model:
+            prediction, probabilities = predict_winner(model, label_encoder, players, ocr_data)
+            logging.info(f"Predicted Winner: {prediction}")
+        
+        if args.debug:
+            logging.info("Debug mode is enabled. Skipping save to Google Sheets.")
+        elif ocr_data:
+            # Save to the sheet with emojis only, with duplicate checking
+            save_to_sheet(ocr_data, WORKSHEET_NAME, CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, include_rate=False, check_duplicates=True)
+            
+            # Save to the data sheet with rates, emojis, and prediction, without duplicate checking
+            save_to_sheet(ocr_data, DATA_WORKSHEET_NAME, CREDENTIALS_PATH, SHEET_NAME, LIST_CONCH, include_rate=True, prediction=prediction, check_duplicates=False)
+            
+        if ocr_data and args.send_discord:
+            send_discord_notification(ocr_data, prediction, probabilities, label_encoder, WEBHOOK_URL, debug=args.debug)
+
+        cv2.imwrite(OUTPUT_PATH, img)
+        logging.info(f"Processed image saved to {OUTPUT_PATH}")
 
 if __name__ == "__main__":
     main()

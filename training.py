@@ -30,7 +30,7 @@ origin_df.head()
 df = origin_df[origin_df['Top 1'].notna() & (origin_df['Top 1'] != "")]
 
 # --- 3. Transform dataset ---
-players = [c for c in df.columns if c not in ["Time", "Top 1"]]
+players = [c for c in df.columns if c not in ["Time", "Top 1", "Predict"]]
 
 X_data = []
 y_data = []
@@ -42,6 +42,7 @@ for _, row in df.iterrows():
         row_features += [rate, emo]
     X_data.append(row_features)
     y_data.append(row["Top 1"])
+    
 
 X = np.array(X_data, dtype=np.float32)
 y = np.array(y_data)

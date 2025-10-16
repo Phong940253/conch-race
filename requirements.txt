@@ -12,3 +12,7 @@ Pillow
 pandas
 emoji
 tqdm
+schedule
+pyautogui
+PyGetWindow
+mss
