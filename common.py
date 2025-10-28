@@ -56,6 +56,8 @@ emoji_map = {
 }
 
 def parse_rate_emoji(cell):
+    # replace , with .
+    cell = str(cell).replace(',', '.')
     if pd.isna(cell) or cell == '':
         return (0.0, 0.0)
     # Extract percentage

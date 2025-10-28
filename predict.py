@@ -74,3 +74,18 @@ print("\n--- Prediction Rates ---")
 for i, conch in enumerate(label_enc.classes_):
     rate = predictions[0][i].item() * 100
     print(f"{conch}: {rate:.2f}%")
+
+# predict all races and show to table
+all_predictions = []
+for idx, row in origin_df.iterrows():
+    winner, _ = predict_winner(model, row, players, label_enc)
+    all_predictions.append(winner)
+new_df = origin_df.copy()
+new_df["Predicted Winner"] = all_predictions
+print("\n--- All Races with Predictions ---")
+# remove column has name Predict
+new_df = new_df.loc[:, ~new_df.columns.str.contains('^Predict$', case=False)]
+print(new_df.head(30))
+
+# save to csv
+new_df.to_csv("conch_race_predictions.csv", index=False)

@@ -23,14 +23,19 @@ def load_model(model_path):
 def predict_winner(model, label_encoder, players, data):
     """Predicts the winner and probabilities based on the OCR data."""
     features = []
+    logging.debug(f"Predicting with data: {data}")
+    logging.debug(f"Using players: {players}")
+    logging.debug(f"Label encoder classes: {label_encoder.classes_}")
     for p in players:
         conch_info = data.get(p)
         if conch_info:
             # The model expects a percentage, so we add it here for parsing
             rate, emo = parse_rate_emoji(f"{conch_info['rate']}% {conch_info['emoji']}")
+            logging.debug(f"Player: {p}, Rate: {rate}, Emoji: {emo}")
             features.extend([rate, emo])
         else:
             features.extend([0.0, 0.0])
+    logging.debug(f"Extracted features: {features}")    
     
     x = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
     with torch.no_grad():

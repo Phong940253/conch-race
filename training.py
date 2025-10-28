@@ -45,6 +45,7 @@ for _, row in df.iterrows():
     
 
 X = np.array(X_data, dtype=np.float32)
+print("Feature sample:", X[1])
 y = np.array(y_data)
 
 # Encode winners

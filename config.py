@@ -83,10 +83,11 @@ def load_config(config_file='config.ini'):
         "Galloping Tractor", "Gold Miner", "Conchie", "Crazy Conch", "Poseidonn", "Deja Vu"
     ]
 
+    # Dynamically build DICT_EMOJI from config
     DICT_EMOJI = {
-        "sad": {"icon": "😢", "path": "./sad.png"},
-        "happy": {"icon": "😁", "path": "./happy.png"},
-        "angry": {"icon": "😡", "path": "./angry.png"},
-        "cool": {"icon": "😎", "path": "./cool.png"},
-        "black": {"icon": "🖤", "path": "./black.png"}
+        "sad": {"icon": "😢", "path": config.get('EmojiPaths', 'sad')},
+        "happy": {"icon": "😁", "path": config.get('EmojiPaths', 'happy')},
+        "angry": {"icon": "😡", "path": config.get('EmojiPaths', 'angry')},
+        "cool": {"icon": "😎", "path": config.get('EmojiPaths', 'cool')},
+        "black": {"icon": "🖤", "path": config.get('EmojiPaths', 'black')}
     }

@@ -1,9 +1,16 @@
 import requests
 import logging
 
-def send_discord_notification(data, prediction, probabilities, label_encoder, webhook_url, debug=False):
+def send_discord_notification(data, prediction, probabilities, label_encoder, webhook_url, debug=False, duplicate_row=None):
     """Sends a notification to a Discord webhook with the race results and prediction rates."""
     try:
+        # if duplicate_row:
+        #     payload = {
+        #         "content": f"@everyone\n⚠️ Duplicate data detected at row **{duplicate_row}**.",
+        #     }
+        # else:
+        #     pass
+        
         embed = {
             "title": "🏁 Conch Race Results",
             "description": "A new race has been processed!",
@@ -31,6 +38,17 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
                 "value": prediction,
                 "inline": False
             })
+            
+        if duplicate_row:
+            # If duplicate, tag everyone and highlight the row number
+            embed["fields"].append({
+                "name": "⚠️ Duplicate Detected",
+                "value": f"@everyone duplicate data detected at row **{duplicate_row}**.",
+                "inline": False
+            })
+            # yellow color
+            embed["color"] = 0xffff00
+            
         
         if probabilities is not None:
             # Create a list of (conch, rate) tuples
@@ -53,9 +71,20 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
                     "value": rates_message,
                     "inline": False
                 })
+            
+            payload = {"embeds": [embed]}
+            if duplicate_row:
+                payload["allow_mentions"] = {"parse": ["everyone"]}
 
-        payload = {"embeds": [embed]}
         response = requests.post(webhook_url, json=payload)
+        
+        # tag everyone if duplicate
+        if duplicate_row:
+            new_payload = {
+                "content": f"@everyone\n⚠️ Duplicate data detected at row **{duplicate_row}**.",
+            }
+            requests.post(webhook_url, json=new_payload)
+        
         response.raise_for_status()
         logging.info("Discord notification sent successfully.")
     except Exception as e:

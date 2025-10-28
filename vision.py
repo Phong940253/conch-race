@@ -1,30 +1,27 @@
 import cv2
 import os
 from fuzzywuzzy import process
+import pyautogui
+from PIL import Image
 
 def detect_emoji(image, dict_emoji, emoji_threshold):
-    """Detects an emoji in the image using template matching."""
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    best_match = {'icon': dict_emoji['sad']['icon'], 'score': emoji_threshold}
+    """Detects an emoji in the image using pyautogui."""
+    # Convert the OpenCV image (NumPy array) to a Pillow image
+    # PyAutoGUI's image recognition works with Pillow images
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
     for emoji_info in dict_emoji.values():
-        if not os.path.exists(emoji_info['path']):
+        try:
+            # Use pyautogui.locate to find the emoji in the given image region
+            if pyautogui.locate(emoji_info['path'], pil_image, confidence=emoji_threshold):
+                return emoji_info['icon']
+        except pyautogui.PyAutoGUIException as e:
+            # This can happen if the template image is not found, etc.
+            # print(f"Could not process emoji {emoji_info['path']}: {e}")
             continue
-        template = cv2.imread(emoji_info['path'], 0)
-        if template is None:
-            continue
-        
-        h, w = template.shape
-        if h > gray_image.shape[0] or w > gray_image.shape[1]:
-            continue
-
-        res = cv2.matchTemplate(gray_image, template, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, _ = cv2.minMaxLoc(res)
-
-        if max_val > best_match['score']:
-            best_match = {'icon': emoji_info['icon'], 'score': max_val}
             
-    return best_match['icon']
+    # Return a default emoji if no match is found
+    return dict_emoji['sad']['icon']
 
 def find_best_match(text, choices, score_cutoff):
     """Finds the best match for a text from a list of choices."""

@@ -16,3 +16,4 @@ schedule
 pyautogui
 PyGetWindow
 mss
+python-Levenshtein

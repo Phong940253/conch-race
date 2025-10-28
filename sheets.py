@@ -43,9 +43,11 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
             if row_data[1:] not in existing_data:
                 sheet.append_row(row_data)
                 logging.info(f"Data saved to '{worksheet_name}'.")
+                return None
             else:
                 row_num = existing_data.index(row_data[1:]) + 2
                 logging.warning(f"Duplicate data in '{worksheet_name}' at row {row_num}. Not saving.")
+                return row_num
         else:
             # If not checking for duplicates, just append the data.
             # Ensure header exists if sheet is empty.
@@ -53,5 +55,7 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
                 sheet.append_row(header)
             sheet.append_row(row_data)
             logging.info(f"Data saved to '{worksheet_name}'.")
+        return None
     except Exception as e:
         logging.error(f"Error saving to Google Sheets: {e}")
+        return None
