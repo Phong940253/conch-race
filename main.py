@@ -166,7 +166,7 @@ def main():
         
         # Schedule OCR tasks
         for hour in [11, 18]:
-            for minute in [4, 22, 39, 59]:
+            for minute in [4, 19, 39, 59]:
                 schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(scheduled_ocr_task, debug=args.debug, send_discord=args.send_discord)
         for hour in [12, 19]:
             for minute in [19, 39]:

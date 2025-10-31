@@ -152,12 +152,12 @@ cython_debug/
 credentials.json
 
 # images
-test.png
-test_ocr.png
+test*.png
 Screenshot*.png
 split-data/
 
 # pytorch lightning logs
 **/lightning_logs/**
+logs/
 # model checkpoints
 **.pt

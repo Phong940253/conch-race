@@ -8,14 +8,14 @@ import os
 from datetime import datetime
 import time
 
-def click_image(image_path, confidence=0.7, region=None):
+def click_image(image_path, confidence=0.7, region=None, sleep_time=2):
     """Finds and clicks the center of an image on the screen."""
     try:
         location = pyautogui.locateCenterOnScreen(image_path, confidence=confidence, region=region)
         if location:
             pyautogui.click(location)
             # logging.info(f"Clicked on {image_path}.")
-            time.sleep(2) # Wait a bit after clicking
+            time.sleep(sleep_time)  # Wait for a short duration after clicking
             return True
         else:
             # logging.warning(f"{image_path} not found on screen.")
@@ -27,14 +27,14 @@ def click_image(image_path, confidence=0.7, region=None):
 def auto_bet(predicted_winner, conch_regions):
     """Automates the betting process based on the predicted winner."""
     if not predicted_winner or not conch_regions:
-        logging.warning("Auto-betting skipped: No prediction or region data.")
+        logging.error("Auto-betting skipped: No prediction or region data.")
         return
 
     # logging.info(f"Starting auto-bet for predicted winner: {predicted_winner}")
 
     # 1. Click the support button
     if not click_image('support.png'):
-        logging.warning("Could not find support button.")
+        logging.error("Could not find support button.")
         return
 
     # 2. Click the increase button for the predicted winner
@@ -43,21 +43,23 @@ def auto_bet(predicted_winner, conch_regions):
     logging.info(f"Predicted winner: {predicted_winner}")
     logging.info(f"Conch regions: {conch_regions}")
     if not winner_region:
-        logging.warning(f"Could not find region for predicted winner: {predicted_winner}")
+        logging.error(f"Could not find region for predicted winner: {predicted_winner}")
         return
     
-    if not click_image('increase.png', region=winner_region):
-        logging.warning(f"Could not find increase button for {predicted_winner}")
-        return
+    # click button increase 3 times
+    for _ in range(3):
+        if not click_image('increase.png', region=winner_region, sleep_time=0.5):
+            logging.error(f"Could not find increase button for {predicted_winner}")
+            return
 
     # 3. Click the first confirm button
     if not click_image('confirm1.png'):
-        logging.warning("Could not find first confirm button.")
+        logging.error("Could not find first confirm button.")
         return
 
     # 4. Click the second confirm button
     if not click_image('confirm2.png'):
-        logging.warning("Could not find second confirm button.")
+        logging.error("Could not find second confirm button.")
         return
     
     logging.info(f"Auto-bet process completed for {predicted_winner}.")

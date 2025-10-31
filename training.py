@@ -8,6 +8,8 @@ import pandas as pd
 import numpy as np
 import torch
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import CSVLogger
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
@@ -77,10 +79,54 @@ val_loader = DataLoader(val_ds, batch_size=8)
 # --- 6. Train model ---
 model = ConchPredictor(input_dim, num_classes)
 
-trainer = pl.Trainer(max_epochs=100, enable_checkpointing=False, log_every_n_steps=1)
+# --- Set up logger ---
+logger = CSVLogger("logs", name="conch_race")
+
+trainer = pl.Trainer(
+    max_epochs=10,
+    enable_checkpointing=False,
+    log_every_n_steps=1,
+    logger=logger
+)
 trainer.fit(model, train_loader, val_loader)
 
-# --- 7. Test prediction ---
+# --- 7. Plot training history ---
+log_dir = logger.log_dir
+metrics_path = f"{log_dir}/metrics.csv"
+metrics_df = pd.read_csv(metrics_path)
+
+# Aggregate training metrics by epoch
+train_metrics = metrics_df.dropna(subset=['train_acc', 'train_loss'])
+train_agg_metrics = train_metrics.groupby('epoch').mean().reset_index()
+
+# Get validation metrics
+val_metrics = metrics_df.dropna(subset=['val_acc', 'val_loss'])
+
+
+# Plot accuracy
+plt.figure(figsize=(10, 5))
+plt.subplot(1, 2, 1)
+plt.plot(train_agg_metrics['epoch'], train_agg_metrics['train_acc'], label='Train Accuracy')
+plt.plot(val_metrics['epoch'], val_metrics['val_acc'], label='Validation Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.title('Training and Validation Accuracy')
+plt.legend()
+
+# Plot loss
+plt.subplot(1, 2, 2)
+plt.plot(train_agg_metrics['epoch'], train_agg_metrics['train_loss'], label='Train Loss')
+plt.plot(val_metrics['epoch'], val_metrics['val_loss'], label='Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.title('Training and Validation Loss')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+# --- 8. Test prediction ---
 def predict_winner(model, row):
     features = []
     for p in players:
@@ -95,7 +141,7 @@ sample = origin_df.iloc[-1]
 print(sample)
 print("🔮 Predicted:", predict_winner(model, sample))
 
-# --- 8. Save trained model ---
+# --- 9. Save trained model ---
 
 MODEL_PATH = "conch_race_model.pt"
 

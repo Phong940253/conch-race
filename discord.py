@@ -4,12 +4,6 @@ import logging
 def send_discord_notification(data, prediction, probabilities, label_encoder, webhook_url, debug=False, duplicate_row=None):
     """Sends a notification to a Discord webhook with the race results and prediction rates."""
     try:
-        # if duplicate_row:
-        #     payload = {
-        #         "content": f"@everyone\n⚠️ Duplicate data detected at row **{duplicate_row}**.",
-        #     }
-        # else:
-        #     pass
         
         embed = {
             "title": "🏁 Conch Race Results",
@@ -40,10 +34,10 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
             })
             
         if duplicate_row:
-            # If duplicate, tag everyone and highlight the row number
+            # If duplicate, highlight the winner
             embed["fields"].append({
                 "name": "⚠️ Duplicate Detected",
-                "value": f"@everyone duplicate data detected at row **{duplicate_row}**.",
+                "value": f"Winner was: **{duplicate_row}**",
                 "inline": False
             })
             # yellow color
@@ -74,17 +68,17 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
             
             payload = {"embeds": [embed]}
             if duplicate_row:
-                payload["allow_mentions"] = {"parse": ["everyone"]}
+                payload["allowed_mentions"] = {"parse": ["everyone"]}
 
         response = requests.post(webhook_url, json=payload)
         
         # tag everyone if duplicate
         if duplicate_row:
             new_payload = {
-                "content": f"@everyone\n⚠️ Duplicate data detected at row **{duplicate_row}**.",
+                "content": f"@everyone\n⚠️ Duplicate data detected."
             }
             requests.post(webhook_url, json=new_payload)
-        
+            
         response.raise_for_status()
         logging.info("Discord notification sent successfully.")
     except Exception as e:
