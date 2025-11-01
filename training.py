@@ -14,9 +14,15 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 import urllib.parse
+import argparse
 from common import ConchPredictor, parse_rate_emoji, SHEET_ID, SHEET_NAME
 
-# --- 2. Load data ---
+# --- 2. Parse arguments ---
+parser = argparse.ArgumentParser(description='Train a model to predict conch race winners.')
+parser.add_argument('--epochs', type=int, default=20, help='Number of epochs to train for.')
+args = parser.parse_args()
+
+# --- 3. Load data ---
 # --- Convert sheet name to encoded URL format ---
 encoded_name = urllib.parse.quote(SHEET_NAME)
 
@@ -31,7 +37,7 @@ origin_df.head()
 # filter Top 1 not none
 df = origin_df[origin_df['Top 1'].notna() & (origin_df['Top 1'] != "")]
 
-# --- 3. Transform dataset ---
+# --- 4. Transform dataset ---
 players = [c for c in df.columns if c not in ["Time", "Top 1", "Predict"]]
 
 X_data = []
@@ -59,7 +65,7 @@ input_dim = X.shape[1]
 
 print(f"✅ Data ready: {X.shape}, classes = {num_classes}")
 
-# --- 5. Dataset and DataLoader ---
+# --- 6. Dataset and DataLoader ---
 class ConchDataset(Dataset):
     def __init__(self, X, y):
         self.X = torch.tensor(X, dtype=torch.float32)
@@ -76,21 +82,21 @@ val_ds = ConchDataset(X_val, y_val)
 train_loader = DataLoader(train_ds, batch_size=8, shuffle=True)
 val_loader = DataLoader(val_ds, batch_size=8)
 
-# --- 6. Train model ---
+# --- 7. Train model ---
 model = ConchPredictor(input_dim, num_classes)
 
 # --- Set up logger ---
 logger = CSVLogger("logs", name="conch_race")
 
 trainer = pl.Trainer(
-    max_epochs=10,
+    max_epochs=args.epochs,
     enable_checkpointing=False,
     log_every_n_steps=1,
     logger=logger
 )
 trainer.fit(model, train_loader, val_loader)
 
-# --- 7. Plot training history ---
+# --- 8. Plot training history ---
 log_dir = logger.log_dir
 metrics_path = f"{log_dir}/metrics.csv"
 metrics_df = pd.read_csv(metrics_path)
@@ -126,7 +132,7 @@ plt.tight_layout()
 plt.show()
 
 
-# --- 8. Test prediction ---
+# --- 9. Test prediction ---
 def predict_winner(model, row):
     features = []
     for p in players:
@@ -141,7 +147,7 @@ sample = origin_df.iloc[-1]
 print(sample)
 print("🔮 Predicted:", predict_winner(model, sample))
 
-# --- 9. Save trained model ---
+# --- 10. Save trained model ---
 
 MODEL_PATH = "conch_race_model.pt"
 
