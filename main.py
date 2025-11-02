@@ -92,7 +92,7 @@ def process_image_grid(img, reader, debug=False):
     
     return ocr_data, conch_regions
 
-def run_ocr_process(debug=False, send_discord=False):
+def run_ocr_process(debug=False, send_discord=False, model_type='pytorch'):
     """Runs the complete OCR and prediction process on a captured image."""
     from config import (
         OUTPUT_PATH, WORKSHEET_NAME, DATA_WORKSHEET_NAME,
@@ -102,9 +102,10 @@ def run_ocr_process(debug=False, send_discord=False):
     img = capture_window()
     if img is None:
         logging.error("Failed to capture window for OCR.")
-        return None, None
+        return None, None, {}, None
 
-    model, label_encoder, players = load_model(MODEL_PATH)
+    model_path = "conch_race_lightgbm_model.pkl" if model_type == 'lightgbm' else MODEL_PATH
+    model, label_encoder, players = load_model(model_path, model_type=model_type)
     reader = easyocr.Reader(['en'])
 
     ocr_data, conch_regions = process_image_grid(img, reader, debug=debug)
@@ -113,7 +114,7 @@ def run_ocr_process(debug=False, send_discord=False):
     prediction = None
     probabilities = None
     if model:
-        prediction, probabilities = predict_winner(model, label_encoder, players, ocr_data)
+        prediction, probabilities = predict_winner(model, label_encoder, players, ocr_data, model_type=model_type)
         logging.info(f"Predicted Winner: {prediction}")
     
     duplicate_row = None
@@ -129,16 +130,40 @@ def run_ocr_process(debug=False, send_discord=False):
     cv2.imwrite(OUTPUT_PATH, img)
     logging.info(f"Processed image saved to {OUTPUT_PATH}")
     
-    return prediction, conch_regions
+    return prediction, probabilities, conch_regions, label_encoder
 
 def scheduled_ocr_task(debug=False, send_discord=False):
     """Task for scheduled OCR runs, including clicking refresh."""
     logging.info("Running scheduled OCR task...")
     if click_refresh_button():
         time.sleep(5)
-        prediction, conch_regions = run_ocr_process(debug, send_discord)
-        if prediction and conch_regions:
+        prediction, probabilities, conch_regions, label_encoder = run_ocr_process(debug, send_discord)
+        
+        if not (prediction and conch_regions):
+            logging.warning("No prediction or conch regions detected. Skipping auto-bet.")
+            return
+
+        if prediction in conch_regions:
             auto_bet(prediction, conch_regions)
+        else:
+            logging.warning(f"Predicted winner '{prediction}' is not in the current race.")
+            
+            if probabilities is not None and label_encoder is not None:
+                # Create a dictionary of conch names to their probabilities
+                prob_dict = {conch: prob for conch, prob in zip(label_encoder.classes_, probabilities[0])}
+                
+                # Filter for participants present in the current race
+                available_conches = {conch: prob_dict.get(conch, 0) for conch in conch_regions.keys()}
+                
+                if available_conches:
+                    # Find the best alternative participant
+                    best_alternative = max(available_conches, key=available_conches.get)
+                    logging.info(f"Betting on the best alternative: '{best_alternative}'")
+                    auto_bet(best_alternative, conch_regions)
+                else:
+                    logging.error("No available conches found to place a bet on.")
+            else:
+                logging.error("Probabilities or label encoder not available to determine an alternative bet.")
 
 def main():
     """Main function to run the OCR process."""
@@ -149,6 +174,7 @@ def main():
     parser.add_argument("-s", "--send-discord", action="store_true", help="Send a notification to Discord.")
     parser.add_argument("-dup", "--duplicate-check", action="store_true", help="Enable duplicate checking when saving to Google Sheets.")
     parser.add_argument("--schedule", action="store_true", help="Run in schedule mode.")
+    parser.add_argument("--model-type", type=str, default="pytorch", choices=['pytorch', 'lightgbm'], help="Specify the model type to use.")
     args = parser.parse_args()
 
     load_config(args.config)
@@ -193,7 +219,8 @@ def main():
 
         image_path = args.image if args.image else IMAGE_PATH
 
-        model, label_encoder, players = load_model(MODEL_PATH)
+        model_path = "conch_race_lightgbm_model.pkl" if args.model_type == 'lightgbm' else MODEL_PATH
+        model, label_encoder, players = load_model(model_path, model_type=args.model_type)
         reader = easyocr.Reader(['en'])
         
         if args.image:
@@ -215,7 +242,7 @@ def main():
         prediction = None
         probabilities = None
         if model:
-            prediction, probabilities = predict_winner(model, label_encoder, players, ocr_data)
+            prediction, probabilities = predict_winner(model, label_encoder, players, ocr_data, model_type=args.model_type)
             logging.info(f"Predicted Winner: {prediction}")
         
         duplicate_row = None
