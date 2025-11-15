@@ -1,5 +1,6 @@
 import requests
 import logging
+import traceback
 
 def send_discord_notification(data, prediction, probabilities, label_encoder, webhook_url, debug=False, duplicate_row=None):
     """Sends a notification to a Discord webhook with the race results and prediction rates."""
@@ -82,4 +83,4 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
         response.raise_for_status()
         logging.info("Discord notification sent successfully.")
     except Exception as e:
-        logging.error(f"Error sending Discord notification: {e}")
+        logging.error(traceback.format_exc())

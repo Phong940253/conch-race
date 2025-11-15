@@ -174,6 +174,7 @@ def main():
     parser.add_argument("-s", "--send-discord", action="store_true", help="Send a notification to Discord.")
     parser.add_argument("-dup", "--duplicate-check", action="store_true", help="Enable duplicate checking when saving to Google Sheets.")
     parser.add_argument("--schedule", action="store_true", help="Run in schedule mode.")
+    parser.add_argument("--now", action="store_true", help="Run the scheduled task immediately once.")
     parser.add_argument("--model-type", type=str, default="pytorch", choices=['pytorch', 'lightgbm'], help="Specify the model type to use.")
     args = parser.parse_args()
 
@@ -195,20 +196,15 @@ def main():
             for minute in [4, 19, 39, 59]:
                 schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(scheduled_ocr_task, debug=args.debug, send_discord=args.send_discord)
         for hour in [12, 19]:
-            for minute in [19, 39]:
+            for minute in [19, 39, 28]:
                 schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(scheduled_ocr_task, debug=args.debug, send_discord=args.send_discord)
-
-        # Schedule training tasks
-        # for hour in [11, 18]:
-        #     for minute in [2, 17, 37, 57]:
-        #         schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(run_training)
-        # for hour in [12, 19]:
-        #     for minute in [17, 37]:
-        #         schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(run_training)
         
         while True:
             schedule.run_pending()
             time.sleep(1)
+    elif args.now:
+        logging.info("Running scheduled task immediately.")
+        scheduled_ocr_task(debug=args.debug, send_discord=args.send_discord)
     else:
         # Now that the config is loaded, we can import the variables
         from config import (

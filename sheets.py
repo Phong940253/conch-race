@@ -2,6 +2,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import logging
+import traceback
 
 def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch, include_rate=False, prediction=None, check_duplicates=True):
     """Saves the OCR data to a Google Sheet."""
@@ -67,5 +68,5 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
             logging.info(f"Data saved to '{worksheet_name}'.")
         return None
     except Exception as e:
-        logging.error(f"Error saving to Google Sheets: {e}")
+        logging.error(traceback.format_exc())
         return None

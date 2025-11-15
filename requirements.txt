@@ -18,3 +18,4 @@ PyGetWindow
 mss
 python-Levenshtein
 lightgbm
+pywin32

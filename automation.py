@@ -2,18 +2,51 @@ import logging
 import pyautogui
 import pygetwindow as gw
 import mss
+import win32api
+import win32con
 import numpy as np
 import cv2
 import os
 from datetime import datetime
 import time
+import traceback
+
+def activate_window(title='Crystal of Atlan  '):
+    """Activates the specified window."""
+    try:
+        window = gw.getWindowsWithTitle(title)[0]
+        if window:
+            window.activate()
+            return True
+        else:
+            logging.warning(f"Window with title '{title}' not found.")
+            return False
+    except IndexError:
+        logging.warning(f"Window with title '{title}' not found.")
+        return False
+    except Exception as e:
+        logging.error(traceback.format_exc())
+        return False
+
+def click(x, y):
+    """Moves the mouse to the specified coordinates and performs a left-click."""
+    try:
+        win32api.SetCursorPos((x, y))
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0)
+        time.sleep(0.1)
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0)
+    except Exception as e:
+        logging.info(f"An error occurred while trying to click at ({x}, {y}): {e}")
+        logging.error(traceback.format_exc())
 
 def click_image(image_path, confidence=0.7, region=None, sleep_time=2):
     """Finds and clicks the center of an image on the screen."""
     try:
+        if not activate_window():
+            return False
         location = pyautogui.locateCenterOnScreen(image_path, confidence=confidence, region=region)
         if location:
-            pyautogui.click(location)
+            click(location.x, location.y)
             # logging.info(f"Clicked on {image_path}.")
             time.sleep(sleep_time)  # Wait for a short duration after clicking
             return True
@@ -67,9 +100,11 @@ def auto_bet(predicted_winner, conch_regions):
 def click_refresh_button():
     """Finds and clicks the refresh button on the screen."""
     try:
+        if not activate_window():
+            return False
         refresh_button_location = pyautogui.locateCenterOnScreen('refresh.png', confidence=0.8)
         if refresh_button_location:
-            pyautogui.click(refresh_button_location)
+            click(refresh_button_location.x, refresh_button_location.y)
             logging.info("Clicked the refresh button.")
             return True
         else:
