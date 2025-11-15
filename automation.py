@@ -47,7 +47,7 @@ def auto_bet(predicted_winner, conch_regions):
         return
     
     # click button increase 3 times
-    for _ in range(3):
+    for _ in range(1):
         if not click_image('increase.png', region=winner_region, sleep_time=0.5):
             logging.error(f"Could not find increase button for {predicted_winner}")
             return

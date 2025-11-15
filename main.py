@@ -78,7 +78,7 @@ def process_image_grid(img, reader, debug=False):
                 name = find_best_match(results[0][1], LIST_CONCH, SCORE_CUTOFF) if results else None
                 
                 if len(results) >= 2:
-                    rate = results[1][1].replace('..', '.').replace(',', '.') if results[1][1] else '0%'
+                    rate = results[1][1].replace('..', '.').replace(',', '.').replace(' ', '').replace('/', '7') if results[1][1] else '0%'
                     if name:
                         ocr_data[name] = {'rate': rate, 'emoji': emoji}
                         conch_regions[name] = (x, y, RECT_WIDTH, RECT_HEIGHT)
