@@ -4,6 +4,18 @@ from datetime import datetime
 import logging
 import traceback
 
+def calculate_match_score(current_data, existing_row):
+    """
+    current_data: list emoji hiện tại (bỏ timestamp)
+    existing_row: list emoji trong sheet (bỏ timestamp)
+    """
+    score = 0
+    for cur, exist in zip(current_data, existing_row):
+        if cur and exist and cur == exist:
+            score += 1
+    return score
+
+
 def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch, include_rate=False, prediction=None, check_duplicates=True):
     """Saves the OCR data to a Google Sheet."""
     try:
@@ -43,22 +55,48 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
             current_data_to_check = row_data[1:]
 
             # Iterate through existing rows to check for duplicates
-            for i, row in enumerate(all_rows):  # Skip header row
-                # Existing data to compare (emojis)
-                existing_data_to_check = row[1:len(current_data_to_check) + 1]
-                
-                if current_data_to_check == existing_data_to_check:
-                    logging.info(current_data_to_check)
-                    # A duplicate is found
-                    row_num = i + 2  # +1 for 1-based index, +1 for skipped header
-                    winner_name = row[-1] if len(row) > len(current_data_to_check) + 1 else "Unknown"
-                    logging.warning(f"Duplicate data in '{worksheet_name}' at row {row_num}. Winner: {winner_name}. Not saving.")
-                    return winner_name
+            best_score = 0
+            best_matches = []
 
-            # If no duplicate is found, append the new row
-            sheet.append_row(row_data)
-            logging.info(f"Data saved to '{worksheet_name}'.")
-            return None
+            for i, row in enumerate(all_rows[1:]):  # bỏ header
+                existing_data = row[1:len(current_data_to_check) + 1]
+
+                score = calculate_match_score(current_data_to_check, existing_data)
+
+                if score > best_score:
+                    best_score = score
+                    best_matches = [{
+                        "row_number": i + 2,  # +1 header, +1 index
+                        "score": score,
+                        "row_data": row,
+                    }]
+                elif score == best_score and score > 0:
+                    best_matches.append({
+                        "row_number": i + 2,
+                        "score": score,
+                        "row_data": row,
+                    })
+            
+            
+            # If no perfect match is found, append the new row
+            if best_score < len(list_conch):
+                sheet.append_row(row_data)
+                logging.info(f"Data saved to '{worksheet_name}'.")
+                    
+            if best_score > 0:
+                logging.warning(
+                    f"Found {len(best_matches)} best match(es) with score={best_score}"
+                )
+
+                for m in best_matches:
+                    logging.info(
+                        f"Match row {m['row_number']} | score={m['score']} | data={m['row_data']}"
+                    )
+
+                # ❌ Không append dòng mới
+                # ✅ Trả về danh sách dòng trùng
+                return best_matches
+
         else:
             # If not checking for duplicates, just append the data.
             # Ensure header exists if sheet is empty.
