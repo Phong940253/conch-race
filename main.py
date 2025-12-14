@@ -78,7 +78,7 @@ def process_image_grid(img, reader, debug=False):
                 name = find_best_match(results[0][1], LIST_CONCH, SCORE_CUTOFF) if results else None
                 
                 if len(results) >= 2:
-                    rate = results[1][1].replace('..', '.').replace(',', '.').replace(' ', '').replace('/', '7') if results[1][1] else '0%'
+                    rate = results[1][1].replace(',', '.').replace(' ', '').replace('/', '7').replace("..", ".") if results[1][1] else '0%'
                     if name:
                         ocr_data[name] = {'rate': rate, 'emoji': emoji}
                         conch_regions[name] = (x, y, RECT_WIDTH, RECT_HEIGHT)
@@ -196,7 +196,7 @@ def main():
             for minute in [4, 19, 39, 59]:
                 schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(scheduled_ocr_task, debug=args.debug, send_discord=args.send_discord)
         for hour in [12, 19]:
-            for minute in [19, 39, 28]:
+            for minute in [19, 39]:
                 schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(scheduled_ocr_task, debug=args.debug, send_discord=args.send_discord)
         
         while True:

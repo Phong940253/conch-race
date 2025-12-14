@@ -112,6 +112,7 @@ def click_refresh_button():
             return False
     except Exception as e:
         logging.error(f"An error occurred while trying to click the refresh button: {e}")
+        logging.error(traceback.format_exc())
         return False
 
 def capture_window(title='Crystal of Atlan  '):

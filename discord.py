@@ -76,7 +76,7 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
         # tag everyone if duplicate
         if duplicate_row:
             new_payload = {
-                "content": f"@everyone\n⚠️ Duplicate data detected."
+                "content": f"@everyone\n⚠️ Duplicate data detected!",
             }
             requests.post(webhook_url, json=new_payload)
             
