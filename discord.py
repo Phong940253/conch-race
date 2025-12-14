@@ -89,7 +89,7 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
 
             # Header
             MAX_COL_WIDTH = 5
-            MAX_COL_EMOJI_WIDTH = 3
+            MAX_COL_EMOJI_WIDTH = 1
 
             conch_names = list(data.keys())
             num_conch = len(conch_names)
@@ -99,9 +99,12 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
                 for name in conch_names
             ]
 
+            MAX_WINNER_WIDTH = 5
+
             header_cols = (
                 [center_cell("Row", 3)] +
                 short_names +
+                [center_cell("Winner", MAX_WINNER_WIDTH)] +
                 [center_cell("Score", 5)]
             )
 
@@ -127,8 +130,14 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
                     for e in emojis
                 ]
 
+                winner = m["row_data"][-1] if m["row_data"] else ""
+                winner_cell = shorten_and_center(winner, MAX_WINNER_WIDTH)
+
                 row_line = " | ".join(
-                    [row_num] + emoji_cells + [score]
+                    [row_num] +
+                    emoji_cells +
+                    [winner_cell] +
+                    [score]
                 )
                 table_lines.append(row_line)
 
