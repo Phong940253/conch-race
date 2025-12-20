@@ -15,6 +15,14 @@ def calculate_match_score(current_data, existing_row):
             score += 1
     return score
 
+def find_first_empty_row_in_table(sheet, start_row=2, key_col=1):
+    """
+    start_row: dòng bắt đầu dữ liệu (sau header)
+    key_col: cột bắt buộc có dữ liệu (ví dụ Timestamp = col 1)
+    """
+    col_values = sheet.col_values(key_col)
+    return len(col_values) + 1
+
 
 def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch, include_rate=False, prediction=None, check_duplicates=True):
     """Saves the OCR data to a Google Sheet."""
@@ -80,7 +88,13 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
             
             # If no perfect match is found, append the new row
             if best_score < len(list_conch):
-                sheet.append_row(row_data)
+                row_index = find_first_empty_row_in_table(sheet)
+
+                sheet.insert_row(
+                    row_data,
+                    row_index,
+                    value_input_option="USER_ENTERED"
+                )
                 logging.info(f"Data saved to '{worksheet_name}'.")
                     
             if best_score > 0:
@@ -102,7 +116,13 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
             # Ensure header exists if sheet is empty.
             if not sheet.get_all_values():
                 sheet.append_row(header)
-            sheet.append_row(row_data)
+                
+            row_index = find_first_empty_row_in_table(sheet)
+            sheet.insert_row(
+                row_data,
+                row_index,
+                value_input_option="USER_ENTERED"
+            )
             logging.info(f"Data saved to '{worksheet_name}'.")
         return None
     except Exception as e:

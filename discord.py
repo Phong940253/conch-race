@@ -41,7 +41,7 @@ def reorder_emojis_by_race(row_data, sheet_conch_order, race_conch_order):
     return ordered_emojis
 
 
-def send_discord_notification(data, prediction, probabilities, label_encoder, webhook_url, debug=False, matched_rows=None):
+def send_discord_notification(data, prediction, probabilities, label_encoder, debug=False, matched_rows=None):
     """Sends a notification to a Discord webhook with the race results and prediction rates."""
     
     from config import (LIST_CONCH)
@@ -187,17 +187,16 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, we
             if has_perfect_match:
                 payload["allowed_mentions"] = {"parse": ["everyone"]}
 
-        response = requests.post(webhook_url, json=payload)
-        
-        # tag everyone if duplicate
-        if has_perfect_match:
-            new_payload = {
-                "content": f"@everyone\n⚠️ Duplicate data detected!",
-            }
-            requests.post(webhook_url, json=new_payload)
-            
-        response.raise_for_status()
-        logging.info("Discord notification sent successfully.")
+        from config import WEBHOOK_URL
+        for url in WEBHOOK_URL:
+            response = requests.post(url, json=payload)
+            # tag everyone if duplicate
+            # if has_perfect_match:
+            #     new_payload = {
+            #         "content": f"@everyone\n⚠️ Duplicate data detected!",
+            #     }
+            #     requests.post(url, json=new_payload)
+            response.raise_for_status()
+            logging.info(f"Discord notification sent successfully to {url}.")
     except Exception as e:
         logging.error(traceback.format_exc())
-    

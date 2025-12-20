@@ -195,7 +195,6 @@ def run_ocr_process(
             prediction,
             probabilities,
             label_encoder,
-            WEBHOOK_URL,
             debug=debug,
             matched_rows=duplicate_row,
         )
@@ -357,7 +356,6 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
             prediction,
             probabilities,
             label_encoder,
-            WEBHOOK_URL,
             debug=args.debug,
             matched_rows=duplicate_row,
         )

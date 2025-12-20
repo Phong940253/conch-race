@@ -17,7 +17,7 @@ WORKSHEET_NAME = None
 DATA_WORKSHEET_NAME = None
 SCORE_CUTOFF = None
 EMOJI_THRESHOLD = None
-WEBHOOK_URL = None
+WEBHOOK_URL = []
 BBOX_COLOR = None
 TEXT_COLOR = None
 GRID_COLOR = None
@@ -65,7 +65,7 @@ def load_config(config_file='config.ini'):
     EMOJI_THRESHOLD = config.getfloat('Settings', 'emoji_threshold')
 
     # Discord
-    WEBHOOK_URL = config.get('Discord', 'webhook_url')
+    WEBHOOK_URL.extend([url.strip() for url in config.get('Discord', 'webhook_url').split(',') if url.strip()])
 
     # Noise Removal
     NOISE_X1 = config.getint('NoiseRemoval', 'x1')
