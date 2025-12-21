@@ -13,15 +13,52 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import matplotlib.pyplot as plt
 import urllib.parse
 import joblib
-from common import parse_rate_emoji, SHEET_ID, SHEET_NAME
+from common import parse_rate_emoji, SHEET_NAME, SHEET
 from lightgbm import early_stopping, log_evaluation
+import config
+from config import load_config
 
 # --- 2. Load data ---
-encoded_name = urllib.parse.quote(SHEET_NAME)
-csv_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+# --- 2. Load data (SAFE: same logic as runtime) ---
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-origin_df = pd.read_csv(csv_url)
-print("✅ Loaded Google Sheet successfully! Shape:", origin_df.shape)
+def load_sheet_as_dataframe(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        config.CREDENTIALS_PATH, scope
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open(sheet_id).worksheet(worksheet_name)
+
+    values = sheet.get_all_values()
+    if not values or len(values) < 2:
+        raise ValueError("Sheet has no data rows")
+
+    header = values[0]
+    rows = values[1:]
+
+    df = pd.DataFrame(rows, columns=header)
+    return df
+
+# --- Load config FIRST ---
+load_config("config.ini")
+assert config.CREDENTIALS_PATH is not None
+
+origin_df = load_sheet_as_dataframe(SHEET, SHEET_NAME)
+print("✅ Loaded Google Sheet via gspread. Shape:", origin_df.shape)
+
+# Filter rows where winner exists
+df = origin_df[
+    origin_df["Top 1"].notna()
+    & (origin_df["Top 1"].astype(str).str.strip() != "")
+].copy()
+
+print("✅ Filtered training rows:", df.shape)
+
 
 # Filter rows where 'Top 1' (winner) exists
 df = origin_df[origin_df['Top 1'].notna() & (origin_df['Top 1'] != "")]

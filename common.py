@@ -12,6 +12,7 @@ import pytorch_lightning as pl
 # --- Google Sheet info ---
 SHEET_ID = "1M-cdCYevdk0ZZjbRRSutcN_4M5A3Hta-uQlCfW8wRbo"
 SHEET_NAME = "Race Data"
+SHEET = "Coa"
 
 # --- Model Definition ---
 class ConchPredictor(pl.LightningModule):
