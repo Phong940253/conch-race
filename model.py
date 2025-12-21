@@ -1,65 +1,107 @@
-import torch
-import torch.nn.functional as F
-from sklearn.preprocessing import LabelEncoder
-import logging
 import joblib
 import numpy as np
-from common import ConchPredictor, parse_rate_emoji
+import logging
+from typing import Dict, Tuple
+from common import parse_rate_emoji
 
-def load_model(model_path, model_type='pytorch'):
-    """Loads the prediction model and its components."""
+# SAME emoji map used in training
+EMOJI_SENTIMENT = {
+    "😡": (-1.0, 1.0),
+    "😢": (-1.0, -1.0),
+    "🖤": (-0.5, 0.0),
+    "😎": (1.0, 0.5),
+    "😁": (1.0, 1.0),
+}
+
+def parse_rate_emoji_rank(cell: str) -> Tuple[float, float, float]:
+    if not cell or str(cell).strip() == "":
+        return 0.0, 0.0, 0.0
+
+    text = str(cell)
+    rate = 0.0
+    valence = arousal = 0.0
+
     try:
-        if model_type == 'pytorch':
-            checkpoint = torch.load(model_path, weights_only=False)
-            model = ConchPredictor(checkpoint["input_dim"], checkpoint["num_classes"])
-            model.load_state_dict(checkpoint["model_state_dict"])
-            model.eval()
-            label_encoder = LabelEncoder()
-            label_encoder.classes_ = checkpoint["label_encoder"]
-            players = checkpoint["players"]
-        elif model_type == 'lightgbm':
-            data = joblib.load(model_path)
-            model = data["model"]
-            label_encoder = data["label_encoder"]
-            players = data["players"]
-        else:
-            raise ValueError("Unsupported model type")
-            
-        logging.info(f"Model '{model_path}' ({model_type}) loaded successfully.")
-        return model, label_encoder, players
-    except FileNotFoundError:
-        logging.error(f"Model file not found at '{model_path}'.")
-        return None, None, None
+        if "%" in text:
+            rate = float(text.split("%")[0].strip())
+    except Exception:
+        pass
 
-def predict_winner(model, label_encoder, players, data, model_type='pytorch'):
-    """Predicts the winner and probabilities based on the OCR data."""
-    features = []
-    logging.debug(f"Predicting with data: {data}")
-    logging.debug(f"Using players: {players}")
-    logging.debug(f"Label encoder classes: {label_encoder.classes_}")
+    for emoji, (v, a) in EMOJI_SENTIMENT.items():
+        if emoji in text:
+            valence, arousal = v, a
+            break
+
+    return rate, valence, arousal
+
+
+def load_model(model_path, model_type="lightgbm"):
+    if model_type != "lightgbm":
+        raise ValueError("Ranking model supports LightGBM only")
+
+    data = joblib.load(model_path)
+    logging.info(f"Loaded ranking model from {model_path}")
+    return data["model"], data["players"], data["features"]
+
+
+def predict_winner(
+    model,
+    players,
+    features,
+    ocr_data: Dict[str, Dict[str, str]],
+):
+    """
+    Ranking-based prediction
+    Returns:
+        winner_name
+        sorted_scores [(name, score)]
+    """
+
+    rows = []
+    names = []
+
+    # Build per-conch rows
+    rates = []
+    temp = []
+
     for p in players:
-        conch_info = data.get(p)
-        if conch_info:
-            rate, emo = parse_rate_emoji(f"{conch_info['rate']}% {conch_info['emoji']}")
-            logging.debug(f"Player: {p}, Rate: {rate}, Emoji: {emo}")
-            features.extend([rate, emo])
+        info = ocr_data.get(p)
+        if info:
+            rate, val, aro = parse_rate_emoji_rank(
+                f"{info['rate']} {info['emoji']}"
+            )
         else:
-            features.extend([0.0, 0.0])
-    logging.debug(f"Extracted features: {features}")    
-    
-    if model_type == 'pytorch':
-        x = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
-        with torch.no_grad():
-            logits = model(x)
-            probabilities = F.softmax(logits, dim=1)
-            pred = logits.argmax(dim=1).item()
-        winner = label_encoder.inverse_transform([pred])[0]
-        return winner, probabilities
-    elif model_type == 'lightgbm':
-        x = np.array(features, dtype=np.float32).reshape(1, -1)
-        probabilities = model.predict(x)
-        pred_index = np.argmax(probabilities, axis=1)[0]
-        winner = label_encoder.inverse_transform([pred_index])[0]
-        return winner, probabilities
-    else:
-        raise ValueError("Unsupported model type")
+            rate, val, aro = 0.0, 0.0, 0.0
+
+        rates.append(rate)
+        temp.append((p, rate, val, aro))
+
+    rates = np.array(rates)
+    mean = rates.mean()
+    std = rates.std() + 1e-6
+
+    for p, rate, val, aro in temp:
+        row = [
+            rate,
+            val,
+            aro,
+            rate - mean,
+            rate / (mean + 1e-6),
+            (rate - mean) / std,
+        ]
+        rows.append(row)
+        names.append(p)
+
+    X = np.asarray(rows, dtype=np.float32)
+
+    scores = model.predict(X)
+
+    ranking = sorted(
+        zip(names, scores),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+
+    winner = ranking[0][0]
+
+    return winner, ranking

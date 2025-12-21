@@ -1,34 +1,66 @@
 # ===========================================
-# 🐚 Conch Race Winner Prediction
-# Using LightGBM
+# 🐚 Conch Race Winner Prediction (RANKING)
+# LightGBM LambdaRank - FULL PIPELINE
 # ===========================================
 
-# --- 1. Imports ---
-import pandas as pd
 import numpy as np
+import pandas as pd
 import lightgbm as lgb
-import matplotlib.pyplot as plt
 import joblib
+from typing import List, Tuple
 
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
 
-from lightgbm import early_stopping, log_evaluation
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 
 import config
 from config import load_config
-from common import parse_rate_emoji, SHEET_NAME, SHEET
+from common import SHEET, SHEET_NAME
+
+# ===========================================
+# 1. Emoji sentiment map
+# ===========================================
+
+EMOJI_SENTIMENT = {
+    "😡": (-1.0, 1.0),   # angry: negative + high arousal
+    "😢": (-1.0, -1.0),  # sad
+    "🖤": (-0.5, 0.0),   # dark / passive
+    "😎": (1.0, 0.5),    # confident
+    "😁": (1.0, 1.0),   # happy / hype
+}
+
+def parse_rate_emoji(cell: str) -> Tuple[float, float, float]:
+    """
+    Parse cell like: '24.7% 😎'
+    Return: rate, valence, arousal
+    """
+    if not cell or str(cell).strip() == "":
+        return 0.0, 0.0, 0.0
+
+    text = str(cell)
+    rate = 0.0
+    valence, arousal = 0.0, 0.0
+
+    try:
+        if "%" in text:
+            rate = float(text.split("%")[0].strip())
+    except Exception:
+        rate = 0.0
+
+    for emoji, (v, a) in EMOJI_SENTIMENT.items():
+        if emoji in text:
+            valence, arousal = v, a
+            break
+
+    return rate, valence, arousal
 
 
 # ===========================================
-# --- 2. Config & Data Loading ---
+# 2. Load Google Sheet
 # ===========================================
 
-def load_sheet_as_dataframe(sheet_name: str, worksheet_name: str) -> pd.DataFrame:
-    """Load Google Sheet safely using gspread (table-safe)."""
+def load_sheet(sheet_name: str, worksheet_name: str) -> pd.DataFrame:
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
@@ -37,196 +69,182 @@ def load_sheet_as_dataframe(sheet_name: str, worksheet_name: str) -> pd.DataFram
         config.CREDENTIALS_PATH, scope
     )
     client = gspread.authorize(creds)
-    worksheet = client.open(sheet_name).worksheet(worksheet_name)
+    ws = client.open(sheet_name).worksheet(worksheet_name)
 
-    values = worksheet.get_all_values()
-    if len(values) < 2:
-        raise ValueError("Google Sheet has no data rows")
-
+    values = ws.get_all_values()
     header, rows = values[0], values[1:]
     return pd.DataFrame(rows, columns=header)
 
 
-# Load config FIRST
-load_config("config.ini")
-assert config.CREDENTIALS_PATH, "CREDENTIALS_PATH is not loaded"
-
-# Load data
-origin_df = load_sheet_as_dataframe(SHEET, SHEET_NAME)
-print("✅ Loaded Google Sheet:", origin_df.shape)
-
-# Keep only rows with winner
-df = origin_df[
-    origin_df["Top 1"].notna()
-    & (origin_df["Top 1"].astype(str).str.strip() != "")
-].copy()
-
-print("✅ Training rows:", df.shape)
-
-
 # ===========================================
-# --- 3. Feature Engineering ---
+# 3. Reshape to ranking dataset
 # ===========================================
 
-EXCLUDE_COLUMNS = {"Time", "Top 1", "Predict"}
-players = [c for c in df.columns if c not in EXCLUDE_COLUMNS]
+def build_ranking_dataset(df: pd.DataFrame):
+    EXCLUDE = {"Time", "Top 1", "Predict"}
+    players = [c for c in df.columns if c not in EXCLUDE]
 
-# ---- Feature names ----
-# Safe names for LightGBM
-lgb_feature_names = []
-# Pretty names for plotting
-plot_feature_names = []
+    X, y, group, race_ids = [], [], [], []
 
-for idx, name in enumerate(players):
-    safe_base = f"p{idx}"
-    lgb_feature_names.append(f"{safe_base}_rate")
-    lgb_feature_names.append(f"{safe_base}_emoji")
+    for race_id, row in df.iterrows():
+        rates = []
+        temp = []
 
-    plot_feature_names.append(f"{name} (rate)")
-    plot_feature_names.append(f"{name} (emoji)")
+        for p in players:
+            rate, val, aro = parse_rate_emoji(row[p])
+            rates.append(rate)
+            temp.append((p, rate, val, aro))
 
-X_data, y_data = [], []
+        rates = np.array(rates)
+        rate_mean = rates.mean()
+        rate_std = rates.std() + 1e-6
 
-for _, row in df.iterrows():
-    features = []
-    for player in players:
-        rate, emoji = parse_rate_emoji(row[player])
-        features.extend([rate, emoji])
-    X_data.append(features)
-    y_data.append(row["Top 1"])
+        group.append(len(players))
 
-X = np.asarray(X_data, dtype=np.float32)
-y = np.asarray(y_data)
+        for p, rate, val, aro in temp:
+            features = [
+                rate,
+                val,
+                aro,
+                rate - rate_mean,         # relative rate
+                rate / (rate_mean + 1e-6),
+                (rate - rate_mean) / rate_std,
+            ]
 
-label_encoder = LabelEncoder()
-y_enc = label_encoder.fit_transform(y)
+            label = 1 if row["Top 1"] == p else 0
 
-num_classes = len(label_encoder.classes_)
-print(f"✅ Features: {X.shape} | Classes: {num_classes}")
+            X.append(features)
+            y.append(label)
+            race_ids.append(race_id)
 
-assert X.shape[1] == len(lgb_feature_names)
-
-
-# ===========================================
-# --- 4. Train / Validation Split ---
-# ===========================================
-
-X_train, X_val, y_train, y_val = train_test_split(
-    X, y_enc, test_size=0.1, random_state=42
-)
-
-
-# ===========================================
-# --- 5. Train LightGBM ---
-# ===========================================
-
-train_data = lgb.Dataset(
-    X_train,
-    label=y_train,
-    feature_name=lgb_feature_names,
-)
-val_data = lgb.Dataset(
-    X_val,
-    label=y_val,
-    reference=train_data,
-)
-
-params = {
-    "objective": "multiclass",
-    "num_class": num_classes,
-    "metric": "multi_logloss",
-    "learning_rate": 0.05,
-    "num_leaves": 31,
-    "feature_fraction": 0.9,
-    "bagging_fraction": 0.8,
-    "bagging_freq": 5,
-    "seed": 42,
-    "verbose": -1,
-}
-
-print("🚀 Training LightGBM...")
-model = lgb.train(
-    params,
-    train_data,
-    num_boost_round=500,
-    valid_sets=[train_data, val_data],
-    callbacks=[
-        early_stopping(stopping_rounds=50),
-        log_evaluation(period=50),
-    ],
-)
-
-
-# ===========================================
-# --- 6. Evaluation ---
-# ===========================================
-
-y_pred = np.argmax(model.predict(X_val), axis=1)
-accuracy = accuracy_score(y_val, y_pred)
-
-print(f"✅ Validation Accuracy: {accuracy:.4f}")
-print(
-    classification_report(
-        y_val,
-        y_pred,
-        target_names=label_encoder.classes_,
-        zero_division=0,
+    return (
+        np.asarray(X, dtype=np.float32),
+        np.asarray(y, dtype=np.int32),
+        np.asarray(group, dtype=np.int32),
+        players,
     )
-)
 
 
 # ===========================================
-# --- 7. Feature Importance (PRETTY NAMES) ---
+# 4. Train / Val split by time
 # ===========================================
 
-importance = model.feature_importance()
-indices = np.argsort(importance)[::-1][:20]
-
-fig, ax = plt.subplots(figsize=(12, 6))
-lgb.plot_importance(
-    model,
-    max_num_features=20,
-    ax=ax,
-)
-
-ax.set_yticks(range(len(indices)))
-ax.set_yticklabels([plot_feature_names[i] for i in indices])
-ax.set_title("Top 20 Feature Importances")
-
-plt.tight_layout()
-plt.show()
+def time_split(df: pd.DataFrame, ratio=0.9):
+    df = df.sort_values("Time")
+    cut = int(len(df) * ratio)
+    return df.iloc[:cut], df.iloc[cut:]
 
 
 # ===========================================
-# --- 8. Sanity Prediction ---
+# 5. Top-1 Accuracy (race-level)
 # ===========================================
 
-def predict_winner(model, row: pd.Series) -> str:
-    features = []
-    for player in players:
-        rate, emoji = parse_rate_emoji(row[player])
-        features.extend([rate, emoji])
-    X = np.asarray(features, dtype=np.float32).reshape(1, -1)
-    pred = np.argmax(model.predict(X), axis=1)[0]
-    return label_encoder.inverse_transform([pred])[0]
+def top1_accuracy(preds: np.ndarray, y: np.ndarray, group: np.ndarray) -> float:
+    correct = 0
+    idx = 0
+    for g in group:
+        group_preds = preds[idx : idx + g]
+        group_labels = y[idx : idx + g]
 
-
-sample = origin_df.iloc[-1]
-print("🔮 Sample prediction:", predict_winner(model, sample))
+        if np.argmax(group_preds) == np.argmax(group_labels):
+            correct += 1
+        idx += g
+    return correct / len(group)
 
 
 # ===========================================
-# --- 9. Save Model ---
+# 6. MAIN
 # ===========================================
 
-MODEL_PATH = "conch_race_lightgbm_model.pkl"
-joblib.dump(
-    {
-        "model": model,
-        "label_encoder": label_encoder,
-        "players": players,
-    },
-    MODEL_PATH,
-)
+def main():
+    load_config("config.ini")
+    assert config.CREDENTIALS_PATH
 
-print(f"✅ Model saved to {MODEL_PATH}")
+    print("📥 Loading Google Sheet...")
+    origin_df = load_sheet(SHEET, SHEET_NAME)
+
+    df = origin_df[
+        origin_df["Top 1"].notna()
+        & (origin_df["Top 1"].astype(str).str.strip() != "")
+    ].copy()
+
+    print("✅ Races:", len(df))
+
+    train_df, val_df = time_split(df)
+
+    X_train, y_train, group_train, players = build_ranking_dataset(train_df)
+    X_val, y_val, group_val, _ = build_ranking_dataset(val_df)
+
+    print("🎯 Players:", players)
+    print("📊 Train rows:", X_train.shape)
+    print("📊 Val rows:", X_val.shape)
+
+    train_data = lgb.Dataset(
+        X_train,
+        label=y_train,
+        group=group_train,
+        feature_name=[
+            "rate",
+            "emoji_valence",
+            "emoji_arousal",
+            "rate_minus_mean",
+            "rate_div_mean",
+            "rate_zscore",
+        ],
+    )
+
+    val_data = lgb.Dataset(
+        X_val,
+        label=y_val,
+        group=group_val,
+        reference=train_data,
+    )
+
+    params = {
+        "objective": "lambdarank",
+        "metric": "ndcg",
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "min_data_in_leaf": 10,
+        "feature_fraction": 0.9,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 5,
+        "seed": 42,
+        "verbose": -1,
+    }
+
+    print("🚀 Training Ranker...")
+    model = lgb.train(
+        params,
+        train_data,
+        num_boost_round=500,
+        valid_sets=[train_data, val_data],
+        callbacks=[
+            lgb.early_stopping(50),
+            lgb.log_evaluation(50),
+        ],
+    )
+
+    val_preds = model.predict(X_val)
+    acc = top1_accuracy(val_preds, y_val, group_val)
+
+    print(f"🏆 Top-1 Accuracy (VAL): {acc:.4f}")
+
+    joblib.dump(
+        {
+            "model": model,
+            "players": players,
+            "features": train_data.feature_name,
+        },
+        "conch_race_ranker.pkl",
+    )
+
+    print("💾 Model saved: conch_race_ranker.pkl")
+
+
+# ===========================================
+# Entry
+# ===========================================
+
+if __name__ == "__main__":
+    main()

@@ -152,7 +152,8 @@ def run_ocr_process(
         return None, None, {}, None
 
     model_path = "conch_race_lightgbm_model.pkl" if model_type == "lightgbm" else MODEL_PATH
-    model, label_encoder, players = load_model(model_path, model_type=model_type)
+    model, players, features = load_model(model_path)
+    label_encoder = None  # keep variable to avoid refactor explosion
     reader = easyocr.Reader(["en"])
 
     ocr_data, conch_regions = process_image_grid(img, reader, debug=debug)
@@ -160,8 +161,11 @@ def run_ocr_process(
     prediction: Optional[str] = None
     probabilities: Optional[Any] = None
     if model:
-        prediction, probabilities = predict_winner(
-            model, label_encoder, players, ocr_data, model_type=model_type
+        prediction, ranking = predict_winner(
+            model,
+            players,
+            features,
+            ocr_data,
         )
         logging.info("Predicted Winner: %s", prediction)
 
@@ -193,8 +197,7 @@ def run_ocr_process(
         send_discord_notification(
             ocr_data,
             prediction,
-            probabilities,
-            label_encoder,
+            ranking,
             debug=debug,
             matched_rows=duplicate_row,
         )
@@ -297,8 +300,9 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
     image_path = args.image if args.image else IMAGE_PATH
-    model_path = "conch_race_lightgbm_model.pkl" if args.model_type == "lightgbm" else MODEL_PATH
-    model, label_encoder, players = load_model(model_path, model_type=args.model_type)
+    model_path = "conch_race_ranker.pkl" if args.model_type == "lightgbm" else MODEL_PATH
+    model, players, features = load_model(model_path)
+    label_encoder = None  # keep variable to avoid refactor explosion
     reader = easyocr.Reader(["en"])
 
     if args.image:
@@ -317,8 +321,11 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
     prediction: Optional[str] = None
     probabilities: Optional[Any] = None
     if model:
-        prediction, probabilities = predict_winner(
-            model, label_encoder, players, ocr_data, model_type=args.model_type
+        prediction, ranking = predict_winner(
+            model,
+            players,
+            features,
+            ocr_data,
         )
         logging.info("Predicted Winner: %s", prediction)
 
@@ -354,8 +361,7 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
         send_discord_notification(
             ocr_data,
             prediction,
-            probabilities,
-            label_encoder,
+            ranking,
             debug=args.debug,
             matched_rows=duplicate_row,
         )

@@ -1,11 +1,18 @@
 import requests
 import logging
 import traceback
+import numpy as np
+
+
+# =======================
+# Helpers
+# =======================
 
 def shorten_and_center(name: str, width: int) -> str:
     if len(name) > width:
         name = name[: width - 1] + "…"
     return center_cell(name, width)
+
 
 def center_cell(text: str, width: int) -> str:
     text = text or ""
@@ -15,105 +22,178 @@ def center_cell(text: str, width: int) -> str:
     right = width - len(text) - left
     return " " * left + text + " " * right
 
+
 def reorder_emojis_by_race(row_data, sheet_conch_order, race_conch_order):
     """
-    row_data: 1 dòng sheet
-    sheet_conch_order: LIST_CONCH (thứ tự cột sheet)
-    race_conch_order: list(data.keys()) (thứ tự race hiện tại)
+    row_data: one row from sheet
+    sheet_conch_order: LIST_CONCH (sheet column order)
+    race_conch_order: OCR order (current race)
     """
 
-    # Lấy emoji theo sheet (bỏ timestamp, bỏ winner)
+    # strip timestamp + winner
     sheet_emojis = row_data[1:-1]
 
-    # Map: tên tay đua -> emoji lịch sử
     sheet_map = {
         conch: emoji
         for conch, emoji in zip(sheet_conch_order, sheet_emojis)
         if emoji and emoji.strip()
     }
 
-    # Reorder theo race hiện tại
-    ordered_emojis = [
-        sheet_map.get(conch, "")
-        for conch in race_conch_order
-    ]
+    return [sheet_map.get(conch, "") for conch in race_conch_order]
 
-    return ordered_emojis
+def format_ranking_with_gap(ranking):
+    """
+    ranking: List[(name, score)] sorted desc
+    """
+    winner_score = ranking[0][1]
+    lines = []
 
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"]
 
-def send_discord_notification(data, prediction, probabilities, label_encoder, debug=False, matched_rows=None):
-    """Sends a notification to a Discord webhook with the race results and prediction rates."""
-    
-    from config import (LIST_CONCH)
-    
+    for i, (name, score) in enumerate(ranking):
+        gap = score - winner_score
+        medal = medals[i] if i < len(medals) else f"{i+1}."
+        if i == 0:
+            lines.append(f"{medal} {name}  (score {score:.2f})")
+        else:
+            lines.append(f"{medal} {name}  ({gap:.2f})")
+
+    return "\n".join(lines)
+
+def format_wsi_padded(ranking, width_name=22, width_bar=10):
+    """
+    ranking: List[(name, score)] TOP-6 already
+    returns: formatted string for Discord code block
+    """
+    # compute WSI
+    scores = np.array([s for _, s in ranking], dtype=np.float32)
+    max_s = scores.max()
+    min_s = scores.min()
+
+    if max_s == min_s:
+        wsi_values = [100] * len(ranking)
+    else:
+        wsi_values = ((scores - min_s) / (max_s - min_s) * 100).round().astype(int)
+
+    lines = []
+    for (name, _), wsi in zip(ranking, wsi_values):
+        bar_filled = int(round(wsi / 100 * width_bar))
+        bar = "█" * bar_filled + "░" * (width_bar - bar_filled)
+
+        line = (
+            f"{name.ljust(width_name)} "
+            f"{bar} "
+            f"{str(wsi).rjust(3)}"
+        )
+        lines.append(line)
+
+    return "```\n" + "\n".join(lines) + "\n```"
+
+# =======================
+# Main Discord Function
+# =======================
+
+def send_discord_notification(
+    data,
+    prediction,
+    ranking,
+    debug=False,
+    matched_rows=None,
+):
+    """
+    data: OCR data
+    prediction: predicted winner name
+    ranking: List[(conch_name, rank_score)]
+    """
+
+    from config import LIST_CONCH, WEBHOOK_URL
+
     try:
-        
         embed = {
             "title": "🏁 Conch Race Results",
             "description": "A new race has been processed!",
-            "color": 0x00ff00,  # Green
+            "color": 0x00FF00,
             "fields": [],
-            "footer": {
-                "text": "Conch Race OCR Bot"
-            }
+            "footer": {"text": "Conch Race OCR Bot"},
         }
 
         if debug:
-            embed["title"] = "🐞 Debug Mode: " + embed["title"]
-            embed["color"] = 0xff0000  # Red
+            embed["title"] = "🐞 Debug Mode — " + embed["title"]
+            embed["color"] = 0xFF0000
 
+        # =======================
+        # OCR Results
+        # =======================
         for name, info in data.items():
             embed["fields"].append({
                 "name": name,
                 "value": f"Rate: {info['rate']} {info['emoji']}",
-                "inline": True
+                "inline": True,
             })
 
+        # =======================
+        # Prediction
+        # =======================
         if prediction:
             embed["fields"].append({
                 "name": "🔮 Predicted Winner",
                 "value": prediction,
-                "inline": False
+                "inline": False,
             })
-            
-        conch_names = list(data.keys())   # thứ tự đã đúng theo OCR
-        num_conch = len(conch_names)      # thường = 6
 
-            
+        # =======================
+        # Duplicate Detection
+        # =======================
+        num_conch = len(data)
         PERFECT_MATCH_SCORE = num_conch
         has_perfect_match = False
 
-        if matched_rows:
-            conch_names = list(data.keys())
-            num_conch = len(conch_names)
+        # =======================
+        # Ranking Probabilities
+        # =======================
+        if ranking:
+            top_ranking = ranking[:6]
+            ranking_text = format_ranking_with_gap(top_ranking)
 
-            # Header
+            embed["fields"].append({
+                "name": "📊 Rank & Confidence Gap",
+                "value": ranking_text,
+                "inline": False,
+            })
+            
+            wsi_tables = format_wsi_padded(top_ranking)
+
+            embed["fields"].append({
+                "name": "💪 Win Strength Index (WSI)",
+                "value": wsi_tables,
+                "inline": False,
+            })
+            
+        # =======================
+        # Historical Match Table
+        # =======================
+        if matched_rows:
             MAX_COL_WIDTH = 5
             MAX_COL_EMOJI_WIDTH = 1
+            MAX_WINNER_WIDTH = 5
 
             conch_names = list(data.keys())
-            num_conch = len(conch_names)
-
             short_names = [
                 shorten_and_center(name, MAX_COL_WIDTH)
                 for name in conch_names
             ]
 
-            MAX_WINNER_WIDTH = 5
-
             header_cols = (
-                [center_cell("Row", 3)] +
-                short_names +
-                [center_cell("Winner", MAX_WINNER_WIDTH)] +
-                [center_cell("Score", 5)]
+                [center_cell("Row", 3)]
+                + short_names
+                + [center_cell("Winner", MAX_WINNER_WIDTH)]
+                + [center_cell("Score", 5)]
             )
 
             header_line = " | ".join(header_cols)
-            table_lines = [header_line]
-            table_lines.append("-" * len(header_line))
+            table_lines = [header_line, "-" * len(header_line)]
 
             for m in matched_rows:
-                # 🔥 FIX: detect perfect match
                 if m.get("score") == PERFECT_MATCH_SCORE:
                     has_perfect_match = True
 
@@ -122,9 +202,10 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, de
 
                 emojis = reorder_emojis_by_race(
                     m["row_data"],
-                    LIST_CONCH,              # thứ tự cột sheet
-                    list(data.keys())        # thứ tự race hiện tại
+                    LIST_CONCH,
+                    list(data.keys()),
                 )
+
                 emoji_cells = [
                     center_cell(e or "", MAX_COL_EMOJI_WIDTH)
                     for e in emojis
@@ -134,69 +215,50 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, de
                 winner_cell = shorten_and_center(winner, MAX_WINNER_WIDTH)
 
                 row_line = " | ".join(
-                    [row_num] +
-                    emoji_cells +
-                    [winner_cell] +
-                    [score]
+                    [row_num]
+                    + emoji_cells
+                    + [winner_cell]
+                    + [score]
                 )
+
                 table_lines.append(row_line)
 
             table_text = "```\n" + "\n".join(table_lines)[:1800] + "\n```"
-            
+
             if has_perfect_match:
                 embed["fields"].append({
                     "name": "⚠️ Duplicate Detected",
                     "value": f"Winner was: **{matched_rows[0]['row_data'][-1]}**",
-                    "inline": False
+                    "inline": False,
                 })
             else:
                 embed["fields"].append({
-                    "name": "⚠️ Historical Match Table",
+                    "name": "📜 Historical Match Table",
                     "value": table_text,
-                    "inline": False
+                    "inline": False,
                 })
-                    
 
-            # Màu sắc theo mức độ
-            embed["color"] = 0x00ff00 if not has_perfect_match else 0xffff00
-            
-        
-        if probabilities is not None:
-            # Create a list of (conch, rate) tuples
-            conch_rates = []
-            for i, conch in enumerate(label_encoder.classes_):
-                rate = probabilities[0][i].item() * 100
-                conch_rates.append((conch, rate))
-            
-            # Sort the list by rate in descending order
-            conch_rates.sort(key=lambda x: x[1], reverse=True)
-            
-            # Format the sorted rates into a string
-            rates_message = ""
-            for conch, rate in conch_rates:
-                rates_message += f"{conch}: {rate:.2f}%\n"
-            
-            if rates_message:
-                embed["fields"].append({
-                    "name": "📊 Prediction Rates",
-                    "value": rates_message,
-                    "inline": False
-                })
-            
-            payload = {"embeds": [embed]}
-            if has_perfect_match:
-                payload["allowed_mentions"] = {"parse": ["everyone"]}
+            embed["color"] = 0xFFFF00 if has_perfect_match else embed["color"]
 
-        from config import WEBHOOK_URL
+        payload = {"embeds": [embed]}
+
+        if has_perfect_match:
+            payload["allowed_mentions"] = {"parse": ["everyone"]}
+
+        # =======================
+        # Send to Discord
+        # =======================
         for url in WEBHOOK_URL:
             response = requests.post(url, json=payload)
-            # tag everyone if duplicate
-            if has_perfect_match:
-                new_payload = {
-                    "content": f"@everyone\n⚠️ Duplicate data detected!",
-                }
-                requests.post(url, json=new_payload)
             response.raise_for_status()
-            logging.info(f"Discord notification sent successfully to {url}.")
-    except Exception as e:
+
+            if has_perfect_match:
+                requests.post(
+                    url,
+                    json={"content": "@everyone\n⚠️ Duplicate data detected!"},
+                )
+
+            logging.info(f"Discord notification sent successfully to {url}")
+
+    except Exception:
         logging.error(traceback.format_exc())
