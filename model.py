@@ -91,6 +91,9 @@ def predict_winner(
         ]
         rows.append(row)
         names.append(p)
+        
+        # logging info
+        logging.info(f"Predict features for {p}: {row}")
 
     X = np.asarray(rows, dtype=np.float32)
 
