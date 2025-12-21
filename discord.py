@@ -191,11 +191,11 @@ def send_discord_notification(data, prediction, probabilities, label_encoder, de
         for url in WEBHOOK_URL:
             response = requests.post(url, json=payload)
             # tag everyone if duplicate
-            # if has_perfect_match:
-            #     new_payload = {
-            #         "content": f"@everyone\n⚠️ Duplicate data detected!",
-            #     }
-            #     requests.post(url, json=new_payload)
+            if has_perfect_match:
+                new_payload = {
+                    "content": f"@everyone\n⚠️ Duplicate data detected!",
+                }
+                requests.post(url, json=new_payload)
             response.raise_for_status()
             logging.info(f"Discord notification sent successfully to {url}.")
     except Exception as e:
