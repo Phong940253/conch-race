@@ -208,7 +208,7 @@ def run_ocr_process(
     return prediction, probabilities, conch_regions, label_encoder
 
 
-def scheduled_ocr_task(debug: bool = False, send_discord: bool = False) -> None:
+def scheduled_ocr_task(args: argparse.Namespace) -> None:
     """Task for scheduled OCR runs, including clicking refresh."""
     logging.info("Running scheduled OCR task...")
     if not click_refresh_button():
@@ -217,7 +217,7 @@ def scheduled_ocr_task(debug: bool = False, send_discord: bool = False) -> None:
 
     time.sleep(5)
     prediction, probabilities, conch_regions, label_encoder = run_ocr_process(
-        debug=debug, send_discord=send_discord, model_type="lightgbm"
+        debug=args.debug, send_discord=args.send_discord, model_type=args.model_type
     )
 
     if not (prediction and conch_regions):
@@ -260,17 +260,17 @@ def _configure_file_logging(log_file: str = "conch-race.log") -> None:
     logging.getLogger().addHandler(file_handler)
 
 
-def _schedule_ocr_tasks(debug: bool, send_discord: bool) -> None:
+def _schedule_ocr_tasks(args: argparse.Namespace) -> None:
     """Register all scheduled OCR tasks."""
     for hour in [11, 18]:
         for minute in [4, 19, 39, 59]:
             schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(
-                scheduled_ocr_task, debug=debug, send_discord=send_discord
+                scheduled_ocr_task, args
             )
     for hour in [12, 19]:
         for minute in [19, 39]:
             schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(
-                scheduled_ocr_task, debug=debug, send_discord=send_discord
+                scheduled_ocr_task, args
             )
 
 
@@ -432,11 +432,11 @@ def main() -> None:
     if args.schedule:
         _configure_file_logging()
         logging.info("Running in schedule mode.")
-        _schedule_ocr_tasks(debug=args.debug, send_discord=args.send_discord)
+        _schedule_ocr_tasks(args)
         _run_schedule_loop()
     elif args.now:
         logging.info("Running scheduled task immediately.")
-        scheduled_ocr_task(debug=args.debug, send_discord=args.send_discord)
+        scheduled_ocr_task(args)
     else:
         _run_single_ocr(args)
 
