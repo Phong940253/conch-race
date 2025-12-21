@@ -60,7 +60,7 @@ def format_ranking_with_gap(ranking):
 
     return "\n".join(lines)
 
-def format_wsi_padded(ranking, width_name=22, width_bar=10):
+def format_wsi_padded(ranking, width_name=22, width_bar=20):
     """
     ranking: List[(name, score)] TOP-6 already
     returns: formatted string for Discord code block

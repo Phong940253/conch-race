@@ -151,7 +151,7 @@ def run_ocr_process(
         logging.error("Failed to capture window for OCR.")
         return None, None, {}, None
 
-    model_path = "conch_race_lightgbm_model.pkl" if model_type == "lightgbm" else MODEL_PATH
+    model_path = "conch_race_ranker.pkl" if model_type == "lightgbm" else MODEL_PATH
     model, players, features = load_model(model_path)
     label_encoder = None  # keep variable to avoid refactor explosion
     reader = easyocr.Reader(["en"])
@@ -217,7 +217,7 @@ def scheduled_ocr_task(debug: bool = False, send_discord: bool = False) -> None:
 
     time.sleep(5)
     prediction, probabilities, conch_regions, label_encoder = run_ocr_process(
-        debug=debug, send_discord=send_discord
+        debug=debug, send_discord=send_discord, model_type="lightgbm"
     )
 
     if not (prediction and conch_regions):
