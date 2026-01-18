@@ -3,6 +3,16 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import logging
 import traceback
+import sys
+
+
+def _supports_console_unicode() -> bool:
+    enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        "😢".encode(enc)
+        return True
+    except Exception:
+        return False
 
 def calculate_match_score(current_data, existing_row):
     """
@@ -103,10 +113,9 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
                 )
 
                 for m in best_matches:
-                    # Use ascii() to avoid Windows console UnicodeEncodeError on emojis
-                    safe_row_data = ascii(m["row_data"])
+                    row_data_to_log = m["row_data"] if _supports_console_unicode() else ascii(m["row_data"])
                     logging.info(
-                        f"Match row {m['row_number']} | score={m['score']} | data={safe_row_data}"
+                        f"Match row {m['row_number']} | score={m['score']} | data={row_data_to_log}"
                     )
 
                 # ❌ Không append dòng mới

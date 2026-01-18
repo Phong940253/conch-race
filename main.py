@@ -27,10 +27,24 @@ from vision import (
 
 
 def _configure_stdio_for_unicode_logging() -> None:
-    """Prevent logging crashes on Windows consoles that can't encode emoji."""
+    """Allow Unicode logs when supported; avoid crashes when not.
+
+    On some Windows consoles the default encoding (e.g. cp1252) can't encode emoji,
+    which can crash logging. If we detect that the current stream encoding can't
+    encode a sample emoji, we set errors='backslashreplace' as a safe fallback.
+    """
+
+    def _can_encode_emoji(stream: object) -> bool:
+        enc = getattr(stream, "encoding", None) or "utf-8"
+        try:
+            "😢".encode(enc)
+            return True
+        except Exception:
+            return False
+
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
-        if callable(reconfigure):
+        if callable(reconfigure) and not _can_encode_emoji(stream):
             try:
                 reconfigure(errors="backslashreplace")
             except Exception:
