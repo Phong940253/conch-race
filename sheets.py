@@ -119,11 +119,19 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
 
                 for m in best_matches:
                     row_data_to_log = m["row_data"] if _supports_console_unicode() else ascii(m["row_data"])
-                    # This can be very noisy; keep in DEBUG but still available in panic webhook.
-                    logger.debug(
-                        "Match row %s | score=%s | data=%s",
+                    # Show full details in console when duplicates are detected.
+                    winner = ""
+                    timestamp = ""
+                    if isinstance(m.get("row_data"), list) and m["row_data"]:
+                        timestamp = m["row_data"][0] if len(m["row_data"]) > 0 else ""
+                        winner = m["row_data"][-1] if len(m["row_data"]) > 0 else ""
+
+                    logger.info(
+                        "Match row %s | score=%s | ts=%s | winner=%s | data=%s",
                         m["row_number"],
                         m["score"],
+                        timestamp,
+                        winner,
                         row_data_to_log,
                     )
 
