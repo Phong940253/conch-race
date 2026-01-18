@@ -17,7 +17,11 @@ import schedule
 
 from automation import capture_window, auto_bet, click_refresh_button
 from config import load_config
-from discord import send_discord_notification, send_panic_notification
+from discord import (
+    send_discord_notification,
+    send_panic_notification,
+    DiscordWebhookLogHandler,
+)
 from model import load_model, predict_winner
 from sheets import save_to_sheet
 from vision import (
@@ -55,53 +59,75 @@ def _configure_stdio_for_unicode_logging() -> None:
 
 # --- Logging Configuration ---
 _configure_stdio_for_unicode_logging()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-_LAST_PANIC_AT: float = 0.0
-_PANIC_COOLDOWN_SECONDS: float = 60.0
+logger = logging.getLogger(__name__)
 
 
-def _maybe_send_panic(content: str) -> None:
-    global _LAST_PANIC_AT
-    now = time.time()
-    if now - _LAST_PANIC_AT < _PANIC_COOLDOWN_SECONDS:
-        return
-    _LAST_PANIC_AT = now
-    send_panic_notification(content)
+def _configure_logging(debug: bool = False) -> None:
+    """Configure console + file logging, and mirror logs to PANIC_WEBHOOK_URL."""
+    from config import PANIC_WEBHOOK_URL
 
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG if debug else logging.INFO)
 
-def _format_exception_message(prefix: str, exc: BaseException) -> str:
-    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    # Keep within Discord message limits
-    tb = tb[-1800:]
-    return f"@everyone\n{prefix}: {type(exc).__name__}: {exc}\n```\n{tb}\n```"
+    # Clear any previous handlers (important if running repeatedly)
+    root.handlers.clear()
 
+    # Simple/clean output for humans
+    console_formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # More details for troubleshooting in log files
+    file_formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(name)s:%(lineno)d | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG if debug else logging.INFO)
+    console.setFormatter(console_formatter)
+    root.addHandler(console)
+
+    if PANIC_WEBHOOK_URL:
+        discord_handler = DiscordWebhookLogHandler(
+            PANIC_WEBHOOK_URL,
+            level=logging.INFO,
+            flush_interval_seconds=5.0,
+            max_buffer_records=40,
+        )
+        discord_handler.setLevel(logging.INFO)
+        discord_handler.setFormatter(console_formatter)
+        root.addHandler(discord_handler)
+
+    # Reduce noise from third-party libraries
+    logging.getLogger("easyocr").setLevel(logging.ERROR)
+    logging.getLogger("easyocr.easyocr").setLevel(logging.ERROR)
+    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+    logging.getLogger("PIL").setLevel(logging.WARNING)
 
 def _install_global_exception_handlers() -> None:
     """Send @everyone to panic webhook on unhandled exceptions."""
 
     def _excepthook(exc_type, exc, tb):
-        try:
-            content = _format_exception_message("Unhandled exception", exc)
-            _maybe_send_panic(content)
-        finally:
-            sys.__excepthook__(exc_type, exc, tb)
+        # Rely on DiscordWebhookLogHandler to forward and tag @everyone on ERROR+
+        logger.critical("Unhandled exception", exc_info=(exc_type, exc, tb))
+        sys.__excepthook__(exc_type, exc, tb)
 
     sys.excepthook = _excepthook
 
     if hasattr(threading, "excepthook"):
         def _thread_excepthook(args):
+            logger.critical(
+                "Thread crashed: %s",
+                getattr(args, "thread", None),
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
             try:
-                content = _format_exception_message(
-                    f"Thread crash ({getattr(args, 'thread', None)})",
-                    args.exc_value,
-                )
-                _maybe_send_panic(content)
-            finally:
-                try:
-                    threading.__excepthook__(args)  # type: ignore[attr-defined]
-                except Exception:
-                    pass
+                threading.__excepthook__(args)  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
         threading.excepthook = _thread_excepthook
 
@@ -220,7 +246,6 @@ def run_ocr_process(
         CREDENTIALS_PATH,
         SHEET_NAME,
         LIST_CONCH,
-        WEBHOOK_URL,
     )
 
     img = capture_window()
@@ -322,8 +347,11 @@ def scheduled_ocr_task(args: argparse.Namespace) -> None:
 
 def _configure_file_logging(log_file: str = "conch-race.log") -> None:
     """Configure file logging for schedule mode."""
-    log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-    file_handler = logging.FileHandler(log_file)
+    log_formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(name)s:%(lineno)d | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(log_formatter)
     logging.getLogger().addHandler(file_handler)
 
@@ -348,8 +376,7 @@ def _run_schedule_loop() -> None:
         try:
             schedule.run_pending()
         except Exception as exc:
-            logging.error("Schedule loop error: %s", exc)
-            _maybe_send_panic(_format_exception_message("Schedule loop error", exc))
+            logger.exception("Schedule loop error")
         time.sleep(1)
 
 
@@ -364,7 +391,6 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
         CREDENTIALS_PATH,
         SHEET_NAME,
         LIST_CONCH,
-        WEBHOOK_URL,
     )
 
     if args.debug:
@@ -508,10 +534,12 @@ def main() -> None:
     """Entry point for running OCR and prediction."""
     args = _parse_arguments()
     load_config(args.config)
+    _configure_logging(debug=args.debug)
     _install_global_exception_handlers()
 
     if args.test_panic:
-        _maybe_send_panic("@everyone\n🧪 Panic webhook test: bot is able to send crash alerts.")
+        # Test a normal (non-tagging) log that should still reach the panic webhook.
+        logger.info("Panic webhook test: normal log forwarding is working")
         return
 
     if args.test_crash:

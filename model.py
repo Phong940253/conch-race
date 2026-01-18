@@ -12,6 +12,9 @@ EMOJI_SENTIMENT = {
     "😁": (1.0, 1.0),
 }
 
+
+logger = logging.getLogger(__name__)
+
 def parse_rate_emoji_rank(cell: str) -> Tuple[float, float, float]:
     if not cell or str(cell).strip() == "":
         return 0.0, 0.0, 0.0
@@ -39,7 +42,7 @@ def load_model(model_path, model_type="lightgbm"):
         raise ValueError("Ranking model supports LightGBM only")
 
     data = joblib.load(model_path)
-    logging.info(f"Loaded ranking model from {model_path}")
+    logger.info("Loaded ranking model: %s", model_path)
     return data["model"], data["players"], data["features"]
 
 
@@ -90,9 +93,9 @@ def predict_winner(
         ]
         rows.append(row)
         names.append(p)
-        
-        # logging info
-        logging.info(f"Predict features for {p}: {row}")
+
+        # Very verbose; keep in DEBUG only
+        logger.debug("Predict features for %s: %s", p, row)
 
     X = np.asarray(rows, dtype=np.float32)
 

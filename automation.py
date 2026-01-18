@@ -11,6 +11,9 @@ from datetime import datetime
 import time
 import traceback
 
+
+logger = logging.getLogger(__name__)
+
 def activate_window(title='Crystal of Atlan  '):
     """Activates the specified window."""
     try:
@@ -19,13 +22,13 @@ def activate_window(title='Crystal of Atlan  '):
             window.activate()
             return True
         else:
-            logging.warning(f"Window with title '{title}' not found.")
+            logger.warning("Window with title '%s' not found.", title)
             return False
     except IndexError:
-        logging.warning(f"Window with title '{title}' not found.")
+        logger.warning("Window with title '%s' not found.", title)
         return False
-    except Exception as e:
-        logging.error(traceback.format_exc())
+    except Exception:
+        logger.exception("Failed to activate window '%s'", title)
         return False
 
 def click(x, y):
@@ -35,9 +38,8 @@ def click(x, y):
         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0)
         time.sleep(0.1)
         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0)
-    except Exception as e:
-        logging.info(f"An error occurred while trying to click at ({x}, {y}): {e}")
-        logging.error(traceback.format_exc())
+    except Exception:
+        logger.exception("Failed to click at (%s, %s)", x, y)
 
 def click_image(image_path, confidence=0.7, region=None, sleep_time=2):
     """Finds and clicks the center of an image on the screen."""
@@ -47,55 +49,55 @@ def click_image(image_path, confidence=0.7, region=None, sleep_time=2):
         location = pyautogui.locateCenterOnScreen(image_path, confidence=confidence, region=region)
         if location:
             click(location.x, location.y)
-            # logging.info(f"Clicked on {image_path}.")
+            logger.debug("Clicked image '%s'", image_path)
             time.sleep(sleep_time)  # Wait for a short duration after clicking
             return True
         else:
-            # logging.warning(f"{image_path} not found on screen.")
+            logger.debug("Image '%s' not found on screen.", image_path)
             return False
-    except Exception as e:
-        # logging.error(f"An error occurred while trying to click {image_path}: {e}")
+    except Exception:
+        logger.exception("click_image failed for '%s'", image_path)
         return False
 
 def auto_bet(predicted_winner, conch_regions):
     """Automates the betting process based on the predicted winner."""
     if not predicted_winner or not conch_regions:
-        logging.error("Auto-betting skipped: No prediction or region data.")
+        logger.error("Auto-betting skipped: No prediction or region data.")
         return
 
     # logging.info(f"Starting auto-bet for predicted winner: {predicted_winner}")
 
     # 1. Click the support button
     if not click_image('support.png'):
-        logging.error("Could not find support button.")
+        logger.error("Could not find support button.")
         return
 
     # 2. Click the increase button for the predicted winner
     winner_region = conch_regions.get(predicted_winner)
-    logging.info(f"Winner region: {winner_region}")
-    logging.info(f"Predicted winner: {predicted_winner}")
-    logging.info(f"Conch regions: {conch_regions}")
+    logger.debug("Winner region: %s", winner_region)
+    logger.debug("Predicted winner: %s", predicted_winner)
+    logger.debug("Conch regions: %s", conch_regions)
     if not winner_region:
-        logging.error(f"Could not find region for predicted winner: {predicted_winner}")
+        logger.error("Could not find region for predicted winner: %s", predicted_winner)
         return
     
     # click button increase 3 times
     for _ in range(1):
         if not click_image('increase.png', region=winner_region, sleep_time=0.5):
-            logging.error(f"Could not find increase button for {predicted_winner}")
+            logger.error("Could not find increase button for %s", predicted_winner)
             return
 
     # 3. Click the first confirm button
     if not click_image('confirm1.png'):
-        logging.error("Could not find first confirm button.")
+        logger.error("Could not find first confirm button.")
         return
 
     # 4. Click the second confirm button
     if not click_image('confirm2.png'):
-        logging.error("Could not find second confirm button.")
+        logger.error("Could not find second confirm button.")
         return
     
-    logging.info(f"Auto-bet process completed for {predicted_winner}.")
+    logger.info("Auto-bet completed for %s", predicted_winner)
 
 def click_refresh_button():
     """Finds and clicks the refresh button on the screen."""
@@ -105,14 +107,13 @@ def click_refresh_button():
         refresh_button_location = pyautogui.locateCenterOnScreen('refresh.png', confidence=0.8)
         if refresh_button_location:
             click(refresh_button_location.x, refresh_button_location.y)
-            logging.info("Clicked the refresh button.")
+            logger.info("Clicked refresh button")
             return True
         else:
-            logging.warning("Refresh button not found on the screen.")
+            logger.warning("Refresh button not found on the screen.")
             return False
-    except Exception as e:
-        logging.error(f"An error occurred while trying to click the refresh button: {e}")
-        logging.error(traceback.format_exc())
+    except Exception:
+        logger.exception("Failed to click refresh button")
         return False
 
 def capture_window(title='Crystal of Atlan  '):
@@ -138,15 +139,15 @@ def capture_window(title='Crystal of Atlan  '):
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = os.path.join(output_dir, f"capture_{timestamp}.png")
                 cv2.imwrite(filename, img)
-                logging.info(f"Screenshot saved to {filename}")
+                logger.debug("Screenshot saved to %s", filename)
                 
                 return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         else:
-            logging.warning(f"Window with title '{title}' not found.")
+            logger.warning("Window with title '%s' not found.", title)
             return None
     except IndexError:
-        logging.warning(f"Window with title '{title}' not found.")
+        logger.warning("Window with title '%s' not found.", title)
         return None
-    except Exception as e:
-        logging.error(f"An error occurred during window capture: {e}")
+    except Exception:
+        logger.exception("Window capture failed")
         return None

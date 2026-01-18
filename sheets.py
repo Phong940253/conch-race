@@ -6,6 +6,9 @@ import traceback
 import sys
 
 
+logger = logging.getLogger(__name__)
+
+
 def _supports_console_unicode() -> bool:
     enc = getattr(sys.stdout, "encoding", None) or "utf-8"
     try:
@@ -105,17 +108,23 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
                     row_index,
                     value_input_option="USER_ENTERED"
                 )
-                logging.info(f"Data saved to '{worksheet_name}'.")
+                logger.info("Saved new row to worksheet '%s'", worksheet_name)
                     
             if best_score > 0:
-                logging.warning(
-                    f"Found {len(best_matches)} best match(es) with score={best_score}"
+                logger.warning(
+                    "Found %s best match(es) with score=%s",
+                    len(best_matches),
+                    best_score,
                 )
 
                 for m in best_matches:
                     row_data_to_log = m["row_data"] if _supports_console_unicode() else ascii(m["row_data"])
-                    logging.info(
-                        f"Match row {m['row_number']} | score={m['score']} | data={row_data_to_log}"
+                    # This can be very noisy; keep in DEBUG but still available in panic webhook.
+                    logger.debug(
+                        "Match row %s | score=%s | data=%s",
+                        m["row_number"],
+                        m["score"],
+                        row_data_to_log,
                     )
 
                 # ❌ Không append dòng mới
@@ -134,8 +143,8 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
                 row_index,
                 value_input_option="USER_ENTERED"
             )
-            logging.info(f"Data saved to '{worksheet_name}'.")
+            logger.info("Saved new row to worksheet '%s'", worksheet_name)
         return None
     except Exception as e:
-        logging.error(traceback.format_exc())
+        logger.exception("Failed to save to Google Sheet '%s'", worksheet_name)
         return None

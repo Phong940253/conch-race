@@ -2,12 +2,19 @@ import requests
 import logging
 import traceback
 import numpy as np
-from typing import Iterable, Optional
+from typing import Iterable, Optional, List
+import threading
+import time
+import sys
+
+
+logger = logging.getLogger(__name__)
 
 
 def send_panic_notification(
     content: str,
     webhook_urls: Optional[Iterable[str]] = None,
+    mention_everyone: bool = True,
 ) -> None:
     """Send an @everyone panic message to Discord.
 
@@ -23,19 +30,133 @@ def send_panic_notification(
         if not webhook_urls:
             return
 
-        payload = {
-            "content": content,
-            "allowed_mentions": {"parse": ["everyone"]},
-        }
+        allowed_mentions = {"parse": ["everyone"]} if mention_everyone else {"parse": []}
+        payload = {"content": content, "allowed_mentions": allowed_mentions}
 
         for url in webhook_urls:
             try:
                 response = requests.post(url, json=payload, timeout=10)
                 response.raise_for_status()
             except Exception:
-                logging.error(traceback.format_exc())
+                # IMPORTANT: do not call logging here (prevents recursion when this is
+                # used from a logging.Handler)
+                try:
+                    print(traceback.format_exc(), file=sys.stderr)
+                except Exception:
+                    pass
     except Exception:
-        logging.error(traceback.format_exc())
+        try:
+            print(traceback.format_exc(), file=sys.stderr)
+        except Exception:
+            pass
+
+
+def _split_discord_content(text: str, limit: int = 1900) -> List[str]:
+    """Split text into chunks suitable for Discord messages."""
+    if not text:
+        return [""]
+    chunks: List[str] = []
+    i = 0
+    while i < len(text):
+        chunks.append(text[i : i + limit])
+        i += limit
+    return chunks
+
+
+class DiscordWebhookLogHandler(logging.Handler):
+    """Logging handler that posts logs to PANIC_WEBHOOK_URL.
+
+    - Sends INFO/WARNING/ERROR logs to the panic webhook (batching to reduce spam).
+    - Only ERROR+ logs will mention @everyone.
+    """
+
+    def __init__(
+        self,
+        webhook_urls: Iterable[str],
+        level: int = logging.INFO,
+        flush_interval_seconds: float = 5.0,
+        max_buffer_records: int = 40,
+    ) -> None:
+        super().__init__(level=level)
+        self._webhook_urls = list(webhook_urls)
+        self._flush_interval = flush_interval_seconds
+        self._max_buffer = max_buffer_records
+        self._lock = threading.Lock()
+        self._buffer: List[str] = []
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._worker, name="discord-log-flush", daemon=True)
+        self._thread.start()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if not self._webhook_urls:
+            return
+
+        try:
+            msg = self.format(record)
+            is_error = record.levelno >= logging.ERROR
+
+            # Include exception traceback if present
+            if record.exc_info:
+                msg = msg + "\n" + "".join(traceback.format_exception(*record.exc_info))[-1800:]
+
+            if is_error:
+                # Flush buffered logs first, then send this error immediately with @everyone
+                self.flush()
+                self._post_lines([msg], mention_everyone=True)
+                return
+
+            with self._lock:
+                self._buffer.append(msg)
+                if len(self._buffer) >= self._max_buffer:
+                    buffered = self._buffer
+                    self._buffer = []
+                else:
+                    buffered = []
+
+            if buffered:
+                self._post_lines(buffered, mention_everyone=False)
+        except Exception:
+            # Never raise from logging
+            return
+
+    def flush(self) -> None:
+        try:
+            with self._lock:
+                buffered = self._buffer
+                self._buffer = []
+            if buffered:
+                self._post_lines(buffered, mention_everyone=False)
+        except Exception:
+            return
+
+    def close(self) -> None:
+        try:
+            self._stop.set()
+            if self._thread.is_alive():
+                self._thread.join(timeout=2)
+            self.flush()
+        finally:
+            super().close()
+
+    def _worker(self) -> None:
+        while not self._stop.is_set():
+            time.sleep(self._flush_interval)
+            self.flush()
+
+    def _post_lines(self, lines: List[str], mention_everyone: bool) -> None:
+        # Build a compact payload; keep it small and readable
+        joined = "\n".join(lines)
+        blocks = _split_discord_content(joined, limit=1600)
+
+        for block in blocks:
+            content = f"```\n{block}\n```"
+            if mention_everyone:
+                content = "@everyone\n" + content
+            send_panic_notification(
+                content,
+                webhook_urls=self._webhook_urls,
+                mention_everyone=mention_everyone,
+            )
 
 
 # =======================
