@@ -4,7 +4,9 @@ matplotlib
 fuzzywuzzy
 gspread
 oauth2client
+torch
 scikit-learn
+pytorch-lightning
 requests
 Pillow
 pandas
