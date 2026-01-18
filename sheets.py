@@ -4,6 +4,13 @@ from datetime import datetime
 import logging
 import traceback
 
+
+def _safe_log_text(text: str) -> str:
+    try:
+        return str(text).encode("utf-8", errors="backslashreplace").decode("utf-8")
+    except Exception:
+        return repr(text)
+
 def calculate_match_score(current_data, existing_row):
     """
     current_data: list emoji hiện tại (bỏ timestamp)
@@ -104,7 +111,9 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
 
                 for m in best_matches:
                     logging.info(
-                        f"Match row {m['row_number']} | score={m['score']} | data={m['row_data']}"
+                        _safe_log_text(
+                            f"Match row {m['row_number']} | score={m['score']} | data={m['row_data']}"
+                        )
                     )
 
                 # ❌ Không append dòng mới

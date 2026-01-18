@@ -2,7 +2,9 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
 import argparse
+import io
 import logging
+import sys
 import time
 from typing import Any, Dict, Optional, Tuple
 
@@ -24,8 +26,33 @@ from vision import (
     preprocess_for_ocr,
 )
 
+def _configure_console_logging_utf8() -> None:
+    """Configure root logger to avoid Windows cp1252 UnicodeEncodeError (emoji logs)."""
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except Exception:
+        pass
+
+    try:
+        stream = sys.stdout
+        if hasattr(stream, "buffer") and not getattr(stream, "encoding", "").lower().startswith("utf"):
+            stream = io.TextIOWrapper(stream.buffer, encoding="utf-8", errors="backslashreplace")
+    except Exception:
+        stream = sys.stdout
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    root_logger.addHandler(handler)
+
+
 # --- Logging Configuration ---
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+_configure_console_logging_utf8()
 
 OcrData = Dict[str, Dict[str, str]]
 ConchRegions = Dict[str, Tuple[int, int, int, int]]
@@ -245,7 +272,7 @@ def scheduled_ocr_task(args: argparse.Namespace) -> None:
 def _configure_file_logging(log_file: str = "conch-race.log") -> None:
     """Configure file logging for schedule mode."""
     log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-    file_handler = logging.FileHandler(log_file)
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(log_formatter)
     logging.getLogger().addHandler(file_handler)
 
