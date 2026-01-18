@@ -4,10 +4,16 @@
 
 import re
 import pandas as pd
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import pytorch_lightning as pl
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    import pytorch_lightning as pl
+except ImportError:  # optional: only needed for legacy PyTorch training
+    torch = None
+    nn = None
+    F = None
+    pl = None
 
 # --- Google Sheet info ---
 SHEET_ID = "1M-cdCYevdk0ZZjbRRSutcN_4M5A3Hta-uQlCfW8wRbo"
@@ -15,37 +21,40 @@ SHEET_NAME = "Race Data"
 SHEET = "Coa"
 
 # --- Model Definition ---
-class ConchPredictor(pl.LightningModule):
-    def __init__(self, input_dim, num_classes):
-        super().__init__()
-        self.fc1 = nn.Linear(input_dim, 64)
-        self.fc2 = nn.Linear(64, 32)
-        self.fc3 = nn.Linear(32, num_classes)
-    
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+if pl is not None:
+    class ConchPredictor(pl.LightningModule):
+        def __init__(self, input_dim, num_classes):
+            super().__init__()
+            self.fc1 = nn.Linear(input_dim, 64)
+            self.fc2 = nn.Linear(64, 32)
+            self.fc3 = nn.Linear(32, num_classes)
+        
+        def forward(self, x):
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            return self.fc3(x)
 
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        logits = self(x)
-        loss = F.cross_entropy(logits, y)
-        acc = (logits.argmax(dim=1) == y).float().mean()
-        self.log('train_loss', loss, prog_bar=True)
-        self.log('train_acc', acc, prog_bar=True)
-        return loss
-    
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        logits = self(x)
-        loss = F.cross_entropy(logits, y)
-        acc = (logits.argmax(dim=1) == y).float().mean()
-        self.log('val_loss', loss, prog_bar=True)
-        self.log('val_acc', acc, prog_bar=True)
-    
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-3)
+        def training_step(self, batch, batch_idx):
+            x, y = batch
+            logits = self(x)
+            loss = F.cross_entropy(logits, y)
+            acc = (logits.argmax(dim=1) == y).float().mean()
+            self.log('train_loss', loss, prog_bar=True)
+            self.log('train_acc', acc, prog_bar=True)
+            return loss
+        
+        def validation_step(self, batch, batch_idx):
+            x, y = batch
+            logits = self(x)
+            loss = F.cross_entropy(logits, y)
+            acc = (logits.argmax(dim=1) == y).float().mean()
+            self.log('val_loss', loss, prog_bar=True)
+            self.log('val_acc', acc, prog_bar=True)
+        
+        def configure_optimizers(self):
+            return torch.optim.Adam(self.parameters(), lr=1e-3)
+else:
+    ConchPredictor = None
 
 # --- Preprocessing function ---
 emoji_map = {

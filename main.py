@@ -132,14 +132,13 @@ def process_image_grid(
 def run_ocr_process(
     debug: bool = False,
     send_discord: bool = False,
-    model_type: str = "pytorch",
-) -> Tuple[Optional[str], Optional[Any], ConchRegions, Optional[Any]]:
+    model_type: str = "lightgbm",
+) -> Tuple[Optional[str], Optional[Any], ConchRegions]:
     """Run the complete OCR and prediction process on a captured image."""
     from config import (
         OUTPUT_PATH,
         WORKSHEET_NAME,
         DATA_WORKSHEET_NAME,
-        MODEL_PATH,
         CREDENTIALS_PATH,
         SHEET_NAME,
         LIST_CONCH,
@@ -149,17 +148,16 @@ def run_ocr_process(
     img = capture_window()
     if img is None:
         logging.error("Failed to capture window for OCR.")
-        return None, None, {}, None
+        return None, None, {}
 
-    model_path = "conch_race_ranker.pkl" if model_type == "lightgbm" else MODEL_PATH
-    model, players, features = load_model(model_path)
-    label_encoder = None  # keep variable to avoid refactor explosion
+    model_path = "conch_race_ranker.pkl"
+    model, players, features = load_model(model_path, model_type="lightgbm")
     reader = easyocr.Reader(["en"])
 
     ocr_data, conch_regions = process_image_grid(img, reader, debug=debug)
 
     prediction: Optional[str] = None
-    probabilities: Optional[Any] = None
+    ranking: Optional[Any] = None
     if model:
         prediction, ranking = predict_winner(
             model,
@@ -205,7 +203,7 @@ def run_ocr_process(
     cv2.imwrite(OUTPUT_PATH, img)
     logging.info("Processed image saved to %s", OUTPUT_PATH)
 
-    return prediction, probabilities, conch_regions, label_encoder
+    return prediction, ranking, conch_regions
 
 
 def scheduled_ocr_task(args: argparse.Namespace) -> None:
@@ -216,7 +214,7 @@ def scheduled_ocr_task(args: argparse.Namespace) -> None:
         return
 
     time.sleep(5)
-    prediction, probabilities, conch_regions, label_encoder = run_ocr_process(
+    prediction, ranking, conch_regions = run_ocr_process(
         debug=args.debug, send_discord=args.send_discord, model_type=args.model_type
     )
 
@@ -230,24 +228,16 @@ def scheduled_ocr_task(args: argparse.Namespace) -> None:
 
     logging.warning("Predicted winner '%s' is not in the current race.", prediction)
 
-    if probabilities is None or label_encoder is None:
-        logging.error(
-            "Probabilities or label encoder not available to determine an alternative bet."
-        )
+    if not ranking:
+        logging.error("Ranking not available to determine an alternative bet.")
         return
 
-    # Create a dictionary of conch names to their probabilities
-    prob_dict = {conch: prob for conch, prob in zip(label_encoder.classes_, probabilities[0])}
-
-    # Filter for participants present in the current race
-    available_conches = {conch: prob_dict.get(conch, 0) for conch in conch_regions.keys()}
-
-    if not available_conches:
+    # Pick the best available participant from the ranking
+    best_alternative = next((name for name, _score in ranking if name in conch_regions), None)
+    if not best_alternative:
         logging.error("No available conches found to place a bet on.")
         return
 
-    # Find the best alternative participant
-    best_alternative = max(available_conches, key=available_conches.get)
     logging.info("Betting on the best alternative: '%s'", best_alternative)
     auto_bet(best_alternative, conch_regions)
 
@@ -289,7 +279,6 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
         OUTPUT_PATH,
         WORKSHEET_NAME,
         DATA_WORKSHEET_NAME,
-        MODEL_PATH,
         CREDENTIALS_PATH,
         SHEET_NAME,
         LIST_CONCH,
@@ -300,9 +289,8 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
     image_path = args.image if args.image else IMAGE_PATH
-    model_path = "conch_race_ranker.pkl" if args.model_type == "lightgbm" else MODEL_PATH
-    model, players, features = load_model(model_path)
-    label_encoder = None  # keep variable to avoid refactor explosion
+    model_path = "conch_race_ranker.pkl"
+    model, players, features = load_model(model_path, model_type="lightgbm")
     reader = easyocr.Reader(["en"])
 
     if args.image:
@@ -319,7 +307,7 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
     ocr_data, conch_regions = process_image_grid(img, reader, debug=args.debug)
 
     prediction: Optional[str] = None
-    probabilities: Optional[Any] = None
+    ranking: Optional[Any] = None
     if model:
         prediction, ranking = predict_winner(
             model,
@@ -417,8 +405,8 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model-type",
         type=str,
-        default="pytorch",
-        choices=["pytorch", "lightgbm"],
+        default="lightgbm",
+        choices=["lightgbm"],
         help="Specify the model type to use.",
     )
     return parser.parse_args()

@@ -2,7 +2,6 @@ import joblib
 import numpy as np
 import logging
 from typing import Dict, Tuple
-from common import parse_rate_emoji
 
 # SAME emoji map used in training
 EMOJI_SENTIMENT = {
