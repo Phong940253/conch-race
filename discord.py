@@ -2,6 +2,40 @@ import requests
 import logging
 import traceback
 import numpy as np
+from typing import Iterable, Optional
+
+
+def send_panic_notification(
+    content: str,
+    webhook_urls: Optional[Iterable[str]] = None,
+) -> None:
+    """Send an @everyone panic message to Discord.
+
+    This is meant for crash/error alerts. It will never raise.
+    """
+
+    try:
+        if webhook_urls is None:
+            from config import PANIC_WEBHOOK_URL
+            webhook_urls = PANIC_WEBHOOK_URL
+
+        webhook_urls = list(webhook_urls)
+        if not webhook_urls:
+            return
+
+        payload = {
+            "content": content,
+            "allowed_mentions": {"parse": ["everyone"]},
+        }
+
+        for url in webhook_urls:
+            try:
+                response = requests.post(url, json=payload, timeout=10)
+                response.raise_for_status()
+            except Exception:
+                logging.error(traceback.format_exc())
+    except Exception:
+        logging.error(traceback.format_exc())
 
 
 # =======================

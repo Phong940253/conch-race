@@ -18,6 +18,7 @@ DATA_WORKSHEET_NAME = None
 SCORE_CUTOFF = None
 EMOJI_THRESHOLD = None
 WEBHOOK_URL = []
+PANIC_WEBHOOK_URL = []
 BBOX_COLOR = None
 TEXT_COLOR = None
 GRID_COLOR = None
@@ -32,7 +33,7 @@ def load_config(config_file='config.ini'):
     """Loads configuration from the specified file and populates global variables."""
     global IMAGE_PATH, OUTPUT_PATH, CREDENTIALS_PATH, MODEL_PATH, START_X, START_Y, \
            RECT_WIDTH, RECT_HEIGHT, PADDING, ROWS, COLS, SHEET_NAME, WORKSHEET_NAME, \
-           DATA_WORKSHEET_NAME, SCORE_CUTOFF, EMOJI_THRESHOLD, WEBHOOK_URL, \
+           DATA_WORKSHEET_NAME, SCORE_CUTOFF, EMOJI_THRESHOLD, WEBHOOK_URL, PANIC_WEBHOOK_URL, \
            BBOX_COLOR, TEXT_COLOR, GRID_COLOR, LIST_CONCH, DICT_EMOJI, \
            NOISE_X1, NOISE_Y1, NOISE_X2, NOISE_Y2
 
@@ -65,7 +66,14 @@ def load_config(config_file='config.ini'):
     EMOJI_THRESHOLD = config.getfloat('Settings', 'emoji_threshold')
 
     # Discord
+    WEBHOOK_URL.clear()
     WEBHOOK_URL.extend([url.strip() for url in config.get('Discord', 'webhook_url').split(',') if url.strip()])
+
+    PANIC_WEBHOOK_URL.clear()
+    if config.has_option('Discord', 'panic_webhook_url'):
+        PANIC_WEBHOOK_URL.extend(
+            [url.strip() for url in config.get('Discord', 'panic_webhook_url').split(',') if url.strip()]
+        )
 
     # Noise Removal
     NOISE_X1 = config.getint('NoiseRemoval', 'x1')

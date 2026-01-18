@@ -3,8 +3,11 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 import argparse
 import logging
+import os
 import sys
 import time
+import traceback
+import threading
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
@@ -14,7 +17,7 @@ import schedule
 
 from automation import capture_window, auto_bet, click_refresh_button
 from config import load_config
-from discord import send_discord_notification
+from discord import send_discord_notification, send_panic_notification
 from model import load_model, predict_winner
 from sheets import save_to_sheet
 from vision import (
@@ -53,6 +56,54 @@ def _configure_stdio_for_unicode_logging() -> None:
 # --- Logging Configuration ---
 _configure_stdio_for_unicode_logging()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+_LAST_PANIC_AT: float = 0.0
+_PANIC_COOLDOWN_SECONDS: float = 60.0
+
+
+def _maybe_send_panic(content: str) -> None:
+    global _LAST_PANIC_AT
+    now = time.time()
+    if now - _LAST_PANIC_AT < _PANIC_COOLDOWN_SECONDS:
+        return
+    _LAST_PANIC_AT = now
+    send_panic_notification(content)
+
+
+def _format_exception_message(prefix: str, exc: BaseException) -> str:
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    # Keep within Discord message limits
+    tb = tb[-1800:]
+    return f"@everyone\n{prefix}: {type(exc).__name__}: {exc}\n```\n{tb}\n```"
+
+
+def _install_global_exception_handlers() -> None:
+    """Send @everyone to panic webhook on unhandled exceptions."""
+
+    def _excepthook(exc_type, exc, tb):
+        try:
+            content = _format_exception_message("Unhandled exception", exc)
+            _maybe_send_panic(content)
+        finally:
+            sys.__excepthook__(exc_type, exc, tb)
+
+    sys.excepthook = _excepthook
+
+    if hasattr(threading, "excepthook"):
+        def _thread_excepthook(args):
+            try:
+                content = _format_exception_message(
+                    f"Thread crash ({getattr(args, 'thread', None)})",
+                    args.exc_value,
+                )
+                _maybe_send_panic(content)
+            finally:
+                try:
+                    threading.__excepthook__(args)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+        threading.excepthook = _thread_excepthook
 
 OcrData = Dict[str, Dict[str, str]]
 ConchRegions = Dict[str, Tuple[int, int, int, int]]
@@ -294,7 +345,11 @@ def _schedule_ocr_tasks(args: argparse.Namespace) -> None:
 def _run_schedule_loop() -> None:
     """Run the infinite schedule loop."""
     while True:
-        schedule.run_pending()
+        try:
+            schedule.run_pending()
+        except Exception as exc:
+            logging.error("Schedule loop error: %s", exc)
+            _maybe_send_panic(_format_exception_message("Schedule loop error", exc))
         time.sleep(1)
 
 
@@ -436,6 +491,16 @@ def _parse_arguments() -> argparse.Namespace:
         choices=["lightgbm"],
         help="Specify the model type to use.",
     )
+    parser.add_argument(
+        "--test-panic",
+        action="store_true",
+        help="Send a test @everyone message to the panic webhook and exit.",
+    )
+    parser.add_argument(
+        "--test-crash",
+        action="store_true",
+        help="Intentionally raise an exception to test crash reporting and exit.",
+    )
     return parser.parse_args()
 
 
@@ -443,6 +508,14 @@ def main() -> None:
     """Entry point for running OCR and prediction."""
     args = _parse_arguments()
     load_config(args.config)
+    _install_global_exception_handlers()
+
+    if args.test_panic:
+        _maybe_send_panic("@everyone\n🧪 Panic webhook test: bot is able to send crash alerts.")
+        return
+
+    if args.test_crash:
+        raise RuntimeError("🧪 Test crash: verifying panic webhook + exception hooks")
 
     if args.schedule:
         _configure_file_logging()

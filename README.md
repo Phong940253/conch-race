@@ -9,6 +9,8 @@ This project uses Optical Character Recognition (OCR) to extract data from scree
 - **Google Sheets Integration**: Saves the extracted race data to a specified Google Sheet, including a timestamp.
 - **Configurable**: All major settings, including paths, OCR grid dimensions, and Google Sheets details, can be configured in the `config.ini` file.
 - **Command-Line Interface**: The script can be run from the command line, with an option to provide the path to the image file directly.
+- **LightGBM-only Prediction**: Uses a LightGBM ranker model (`conch_race_ranker.pkl`) for winner prediction.
+- **Crash/Panic Alerts**: On crash/unhandled exception, sends an `@everyone` alert to a dedicated Discord panic webhook.
 
 ## Setup
 
@@ -45,6 +47,7 @@ This project uses Optical Character Recognition (OCR) to extract data from scree
     image_path = test.png          ; Default image to process
     output_path = test_ocr.png     ; Where to save the processed image with OCR boxes
     credentials_path = credentials.json ; Path to your Google API credentials
+    model_path = conch_race_ranker.pkl  ; LightGBM ranker model
 
     [OCRGrid]
     ; Coordinates and dimensions for the OCR grid
@@ -64,22 +67,50 @@ This project uses Optical Character Recognition (OCR) to extract data from scree
     [Settings]
     score_cutoff = 70              ; Confidence threshold for fuzzy name matching (0-100)
     emoji_threshold = 0.8          ; Confidence threshold for emoji detection (0.0-1.0)
+
+    [Discord]
+    webhook_url = https://discord.com/api/webhooks/...  ; normal race notifications
+    panic_webhook_url = https://discord.com/api/webhooks/... ; crash alerts (@everyone)
     ```
 
 ## Usage
 
-To run the script, execute `ocr.py` from your terminal.
+To run the script, execute `main.py` from your terminal.
 
 **Process the default image specified in `config.ini`:**
 
 ```bash
-python ocr.py
+python main.py --config config.ini
 ```
 
 **Process a specific image by providing its path as an argument:**
 
 ```bash
-python ocr.py /path/to/your/image.png
+python main.py --config config.ini --image /path/to/your/image.png
+```
+
+**Schedule mode (runs OCR at configured times):**
+
+```bash
+python main.py --config config.ini --schedule
+```
+
+**Run scheduled task once (useful for quick checks):**
+
+```bash
+python main.py --config config.ini --now
+```
+
+**Send a test panic message to Discord and exit:**
+
+```bash
+python main.py --config config.ini --test-panic
+```
+
+**Force a crash to verify crash reporting and exit:**
+
+```bash
+python main.py --config config.ini --test-crash
 ```
 
 After execution, the script will:
@@ -87,3 +118,15 @@ After execution, the script will:
 2.  Log the extracted data to the console.
 3.  Save a new image named `test_ocr.png` (or as configured) with the OCR detection boxes drawn on it.
 4.  Append the new data to the configured Google Sheet.
+
+## Notes
+
+### Unicode / Emoji logs on Windows
+
+If your terminal supports Unicode (Windows Terminal / PowerShell 7), emojis should display normally.
+If you use `cmd.exe`, you may need:
+
+```bat
+chcp 65001
+python -X utf8 main.py --config config.ini
+```
