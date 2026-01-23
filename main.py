@@ -111,6 +111,13 @@ def _install_global_exception_handlers() -> None:
     """Send @everyone to panic webhook on unhandled exceptions."""
 
     def _excepthook(exc_type, exc, tb):
+        # Ctrl+C should stop the program quietly (no panic webhook)
+        if exc_type is KeyboardInterrupt:
+            try:
+                logger.info("Interrupted (Ctrl+C)")
+            except Exception:
+                pass
+            return
         # Rely on DiscordWebhookLogHandler to forward and tag @everyone on ERROR+
         logger.critical("Unhandled exception", exc_info=(exc_type, exc, tb))
         sys.__excepthook__(exc_type, exc, tb)
@@ -119,6 +126,8 @@ def _install_global_exception_handlers() -> None:
 
     if hasattr(threading, "excepthook"):
         def _thread_excepthook(args):
+            if getattr(args, "exc_type", None) is KeyboardInterrupt:
+                return
             logger.critical(
                 "Thread crashed: %s",
                 getattr(args, "thread", None),
@@ -545,16 +554,24 @@ def main() -> None:
     if args.test_crash:
         raise RuntimeError("🧪 Test crash: verifying panic webhook + exception hooks")
 
-    if args.schedule:
-        _configure_file_logging()
-        logging.info("Running in schedule mode.")
-        _schedule_ocr_tasks(args)
-        _run_schedule_loop()
-    elif args.now:
-        logging.info("Running scheduled task immediately.")
-        scheduled_ocr_task(args)
-    else:
-        _run_single_ocr(args)
+    try:
+        if args.schedule:
+            _configure_file_logging()
+            logging.info("Running in schedule mode.")
+            _schedule_ocr_tasks(args)
+            _run_schedule_loop()
+        elif args.now:
+            logging.info("Running scheduled task immediately.")
+            scheduled_ocr_task(args)
+        else:
+            _run_single_ocr(args)
+    except KeyboardInterrupt:
+        logger.info("Interrupted (Ctrl+C)")
+    finally:
+        try:
+            logging.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
