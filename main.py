@@ -256,23 +256,41 @@ def process_image_grid(
                     first_region_processed = True
 
                 results = perform_ocr_on_region(reader, preprocessed_region)
-                name = find_best_match(results[0][1], LIST_CONCH, SCORE_CUTOFF) if results else None
 
-                if len(results) >= 2:
-                    raw_rate = results[1][1] or "0%"
-                    rate = (
-                        raw_rate.replace(",", ".")
-                        .replace(" ", "")
-                        .replace("/", "7")
-                        .replace("..", ".")
-                    )
-                    if name:
-                        ocr_data[name] = {"rate": rate, "emoji": emoji}
-                        conch_regions[name] = (x, y, RECT_WIDTH, RECT_HEIGHT)
-                elif len(results) == 1:
-                    if name:
-                        ocr_data[name] = {"rate": "0%", "emoji": emoji}
-                        conch_regions[name] = (x, y, RECT_WIDTH, RECT_HEIGHT)
+                def _looks_like_rate(text: str) -> bool:
+                    t = (text or "").strip()
+                    if not t:
+                        return False
+                    if "%" in t:
+                        return True
+                    # Some OCR runs drop the %; treat numeric-looking second line as rate-ish.
+                    digits = sum(ch.isdigit() for ch in t)
+                    return digits >= 2 and any(ch in t for ch in [".", ","]) and len(t) <= 6
+
+                name_text: Optional[str] = None
+                rate_text: Optional[str] = None
+                for _bbox, text, _conf in results:
+                    if not text:
+                        continue
+                    if rate_text is None and _looks_like_rate(text):
+                        rate_text = text
+                        continue
+                    if name_text is None:
+                        name_text = text
+
+                name = find_best_match(name_text, LIST_CONCH, SCORE_CUTOFF) if name_text else None
+
+                raw_rate = rate_text or "0%"
+                rate = (
+                    raw_rate.replace(",", ".")
+                    .replace(" ", "")
+                    .replace("/", "7")
+                    .replace("..", ".")
+                )
+
+                if name:
+                    ocr_data[name] = {"rate": rate, "emoji": emoji}
+                    conch_regions[name] = (x, y, RECT_WIDTH, RECT_HEIGHT)
 
                 draw_ocr_results(img, results, x, y, BBOX_COLOR, TEXT_COLOR)
                 cv2.rectangle(img, (x, y), (x + RECT_WIDTH, y + RECT_HEIGHT), GRID_COLOR, 2)
