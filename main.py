@@ -63,6 +63,44 @@ _configure_stdio_for_unicode_logging()
 logger = logging.getLogger(__name__)
 
 
+class _ResilientFileHandler(logging.FileHandler):
+    """FileHandler that attempts to recover from transient OS-level stream invalidation.
+
+    On Windows + VMware shared folders, suspending/resuming a VM can invalidate open
+    file handles. When the handler later flushes, Python may raise:
+        OSError: [Errno 9] Bad file descriptor
+
+    This handler tries to re-open the file and retry once.
+    """
+
+    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802
+        exc_type, exc, _tb = sys.exc_info()
+
+        if isinstance(exc, OSError) and getattr(exc, "errno", None) == 9:
+            try:
+                self.acquire()
+                try:
+                    if self.stream:
+                        try:
+                            self.stream.close()
+                        except Exception:
+                            pass
+                    self.stream = self._open()
+                finally:
+                    self.release()
+
+                # Retry writing the same record once.
+                msg = self.format(record)
+                self.stream.write(msg + self.terminator)
+                self.flush()
+                return
+            except Exception:
+                # If recovery fails, fall back to default error handling.
+                pass
+
+        super().handleError(record)
+
+
 def _configure_logging(debug: bool = False) -> None:
     """Configure console + file logging, and mirror logs to PANIC_WEBHOOK_URL."""
     from config import PANIC_WEBHOOK_URL
@@ -360,7 +398,7 @@ def _configure_file_logging(log_file: str = "conch-race.log") -> None:
         fmt="%(asctime)s | %(levelname)s | %(name)s:%(lineno)d | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler = _ResilientFileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(log_formatter)
     logging.getLogger().addHandler(file_handler)
 
