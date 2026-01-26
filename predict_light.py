@@ -6,6 +6,7 @@
 import numpy as np
 import pandas as pd
 import joblib
+import re
 
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
@@ -26,20 +27,34 @@ EMOJI_SENTIMENT = {
     "😁": (1.0, 1.0),
 }
 
+_RATE_RE = re.compile(r"([-+]?\d+(?:[\.,]\d+)?)")
+
+
+def _extract_rate_percent(text: str) -> float:
+    if not text:
+        return 0.0
+    s = str(text).strip()
+    if not s:
+        return 0.0
+    if "%" in s:
+        s = s.split("%", 1)[0]
+    m = _RATE_RE.search(s)
+    if not m:
+        return 0.0
+    num = m.group(1).replace(",", ".")
+    try:
+        return float(num)
+    except Exception:
+        return 0.0
+
 
 def parse_rate_emoji(cell: str):
     if not cell or str(cell).strip() == "":
         return 0.0, 0.0, 0.0
 
     text = str(cell)
-    rate = 0.0
+    rate = _extract_rate_percent(text)
     valence = arousal = 0.0
-
-    try:
-        if "%" in text:
-            rate = float(text.split("%")[0].strip())
-    except Exception:
-        pass
 
     for emoji, (v, a) in EMOJI_SENTIMENT.items():
         if emoji in text:
@@ -100,18 +115,39 @@ def predict_race(row: pd.Series):
     rates = np.array(rates, dtype=np.float32)
     mean = rates.mean()
     std = rates.std() + 1e-6
+    rate_max = float(np.max(rates)) if len(rates) else 0.0
+    rate_min = float(np.min(rates)) if len(rates) else 0.0
+    denom = (rate_max - rate_min) + 1e-6
+
+    # Rank features (0 = highest rate)
+    order = np.lexsort((np.arange(len(rates)), -rates))
+    rank_pos = np.empty_like(order)
+    rank_pos[order] = np.arange(len(rates))
+
+    # Rate-only softmax
+    centered = rates - np.max(rates) if len(rates) else rates
+    exp_rates = np.exp(centered)
+    softmax = exp_rates / (np.sum(exp_rates) + 1e-6)
 
     X = []
     names = []
 
-    for p, rate, val, aro in temp:
+    player_to_id = {p: i for i, p in enumerate(players)}
+
+    for idx_p, (p, rate, val, aro) in enumerate(temp):
         X.append([
+            player_to_id[p],
             rate,
             val,
             aro,
             rate - mean,
             rate / (mean + 1e-6),
             (rate - mean) / std,
+            rank_pos[idx_p] / max(len(players) - 1, 1),
+            (rate - rate_max),
+            (rate_max - rate),
+            (rate - rate_min) / denom,
+            softmax[idx_p],
         ])
         names.append(p)
 
