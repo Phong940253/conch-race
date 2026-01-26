@@ -155,6 +155,8 @@ credentials.json
 test*.png
 Screenshot*.png
 split-data/
+research/
+explain_outputs/
 
 # pytorch lightning logs
 **/lightning_logs/**

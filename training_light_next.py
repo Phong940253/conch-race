@@ -104,8 +104,8 @@ def build_ranking_dataset(df: pd.DataFrame):
         for p, rate, val, aro in temp:
             features = [
                 rate,
-                val,
-                aro,
+                val, # emoji valence
+                aro, # emoji arousal
                 rate - rate_mean,         # relative rate
                 rate / (rate_mean + 1e-6),
                 (rate - rate_mean) / rate_std,
