@@ -6,6 +6,7 @@ from typing import Iterable, Optional, List
 import threading
 import time
 import sys
+import unicodedata
 
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,37 @@ def center_cell(text: str, width: int) -> str:
     return " " * left + text + " " * right
 
 
+def _display_width(text: str) -> int:
+    """Approximate monospace display width for Discord code blocks."""
+    width = 0
+    for ch in text:
+        code = ord(ch)
+
+        # Zero-width joiner and variation selectors should not add width.
+        if code in (0x200D, 0xFE0E, 0xFE0F):
+            continue
+        if unicodedata.combining(ch):
+            continue
+
+        # Emoji and full-width chars are generally rendered as width 2.
+        if 0x1F300 <= code <= 0x1FAFF:
+            width += 2
+        elif unicodedata.east_asian_width(ch) in ("W", "F"):
+            width += 2
+        else:
+            width += 1
+    return width
+
+
+def pad_cell_display(text: str, width: int) -> str:
+    """Pad cell content to a target display width (not Python len)."""
+    text = (text or "").strip()
+    pad = width - _display_width(text)
+    if pad <= 0:
+        return text
+    return text + (" " * pad)
+
+
 def reorder_emojis_by_race(row_data, sheet_conch_order, race_conch_order):
     """
     row_data: one row from sheet
@@ -329,7 +361,9 @@ def send_discord_notification(
         # =======================
         if matched_rows:
             MAX_COL_WIDTH = 5
-            MAX_COL_EMOJI_WIDTH = 1
+            # Emoji often render as double-width in Discord code blocks.
+            # Keep empty cells aligned with emoji cells.
+            MAX_COL_EMOJI_WIDTH = 2
             MAX_WINNER_WIDTH = 5
 
             conch_names = list(data.keys())
@@ -362,7 +396,7 @@ def send_discord_notification(
                 )
 
                 emoji_cells = [
-                    center_cell(e or "", MAX_COL_EMOJI_WIDTH)
+                    pad_cell_display(e or "", MAX_COL_EMOJI_WIDTH)
                     for e in emojis
                 ]
 

@@ -44,6 +44,12 @@ def parse_rate_emoji_rank(cell: str) -> Tuple[float, float, float]:
     rate = _extract_rate_percent(text)
     valence = arousal = 0.0
 
+    try:
+        if "%" in text:
+            rate = float(text.split("%")[0].strip())
+    except Exception:
+        pass
+
     for emoji, (v, a) in EMOJI_SENTIMENT.items():
         if emoji in text:
             valence, arousal = v, a
@@ -97,36 +103,14 @@ def predict_winner(
     mean = rates.mean()
     std = rates.std() + 1e-6
 
-    rate_max = float(np.max(rates)) if len(rates) else 0.0
-    rate_min = float(np.min(rates)) if len(rates) else 0.0
-    denom = (rate_max - rate_min) + 1e-6
-
-    # Rank features (0 = highest rate)
-    order = np.lexsort((np.arange(len(rates)), -rates))
-    rank_pos = np.empty_like(order)
-    rank_pos[order] = np.arange(len(rates))
-
-    # Rate-only softmax
-    centered = rates - np.max(rates) if len(rates) else rates
-    exp_rates = np.exp(centered)
-    softmax = exp_rates / (np.sum(exp_rates) + 1e-6)
-
-    player_to_id = {p: i for i, p in enumerate(players)}
-
-    for idx_p, (p, rate, val, aro) in enumerate(temp):
+    for p, rate, val, aro in temp:
         row = [
-            player_to_id[p],
             rate,
             val,
             aro,
             rate - mean,
             rate / (mean + 1e-6),
             (rate - mean) / std,
-            rank_pos[idx_p] / max(len(players) - 1, 1),
-            (rate - rate_max),
-            (rate_max - rate),
-            (rate - rate_min) / denom,
-            softmax[idx_p],
         ]
         rows.append(row)
         names.append(p)

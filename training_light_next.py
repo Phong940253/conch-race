@@ -103,9 +103,6 @@ def build_ranking_dataset(df: pd.DataFrame):
     EXCLUDE = {"Time", "Top 1", "Predict"}
     players = [c for c in df.columns if c not in EXCLUDE]
 
-    # Fixed mapping so train/predict are consistent across runs
-    player_to_id = {p: i for i, p in enumerate(players)}
-
     X, y, group, race_ids = [], [], [], []
 
     for race_id, row in df.iterrows():
@@ -120,42 +117,20 @@ def build_ranking_dataset(df: pd.DataFrame):
         rates = np.array(rates)
         rate_mean = rates.mean()
         rate_std = rates.std() + 1e-6
-        rate_max = float(np.max(rates)) if len(rates) else 0.0
-        rate_min = float(np.min(rates)) if len(rates) else 0.0
-        denom = (rate_max - rate_min) + 1e-6
-
-        # Rank features (0 = highest rate)
-        # Use a stable tie-breaker by player order.
-        order = np.lexsort((np.arange(len(rates)), -rates))
-        rank_pos = np.empty_like(order)
-        rank_pos[order] = np.arange(len(rates))
-
-        # Rate-only softmax (helps model reason about relative mass)
-        centered = rates - np.max(rates) if len(rates) else rates
-        exp_rates = np.exp(centered)
-        softmax = exp_rates / (np.sum(exp_rates) + 1e-6)
 
         group.append(len(players))
 
-        winner_name = str(row.get("Top 1", "")).strip()
-
-        for idx_p, (p, rate, val, aro) in enumerate(temp):
+        for p, rate, val, aro in temp:
             features = [
-                player_to_id[p],
                 rate,
                 val, # emoji valence
                 aro, # emoji arousal
                 rate - rate_mean,         # relative rate
                 rate / (rate_mean + 1e-6),
                 (rate - rate_mean) / rate_std,
-                rank_pos[idx_p] / max(len(players) - 1, 1),
-                (rate - rate_max),
-                (rate_max - rate),
-                (rate - rate_min) / denom,
-                softmax[idx_p],
             ]
 
-            label = 1 if winner_name == p else 0
+            label = 1 if row["Top 1"] == p else 0
 
             X.append(features)
             y.append(label)
@@ -174,16 +149,7 @@ def build_ranking_dataset(df: pd.DataFrame):
 # ===========================================
 
 def time_split(df: pd.DataFrame, ratio=0.9):
-    df = df.copy()
-    # Robust sort: 'Time' from Sheets is often a string; coerce to datetime.
-    if "Time" in df.columns:
-        dt = pd.to_datetime(df["Time"], errors="coerce")
-        df = df.assign(_time_dt=dt)
-        # Put NaT at the end to avoid leaking future-like missing times into train
-        df = df.sort_values(["_time_dt", "Time"], na_position="last")
-        df = df.drop(columns=["_time_dt"])
-    else:
-        df = df.sort_index()
+    df = df.sort_values("Time")
     cut = int(len(df) * ratio)
     return df.iloc[:cut], df.iloc[cut:]
 
@@ -237,20 +203,13 @@ def main():
         label=y_train,
         group=group_train,
         feature_name=[
-            "player_id",
             "rate",
             "emoji_valence",
             "emoji_arousal",
             "rate_minus_mean",
             "rate_div_mean",
             "rate_zscore",
-            "rate_rank_norm",
-            "rate_minus_max",
-            "max_minus_rate",
-            "rate_minmax",
-            "rate_softmax",
         ],
-        categorical_feature=["player_id"],
     )
 
     val_data = lgb.Dataset(
@@ -263,7 +222,6 @@ def main():
     params = {
         "objective": "lambdarank",
         "metric": "ndcg",
-        "ndcg_eval_at": [1],
         "learning_rate": 0.05,
         "num_leaves": 63,
         "min_data_in_leaf": 10,
