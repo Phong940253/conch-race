@@ -334,6 +334,7 @@ def send_discord_notification(
         num_conch = len(data)
         PERFECT_MATCH_SCORE = num_conch
         has_perfect_match = False
+        has_winner_conflict = False
 
         # =======================
         # Ranking Probabilities
@@ -382,9 +383,14 @@ def send_discord_notification(
             header_line = " | ".join(header_cols)
             table_lines = [header_line, "-" * len(header_line)]
 
+            perfect_match_winners = []
+
             for m in matched_rows:
                 if m.get("score") == PERFECT_MATCH_SCORE:
                     has_perfect_match = True
+                    winner_name = m["row_data"][-1] if m["row_data"] else ""
+                    if winner_name:
+                        perfect_match_winners.append(winner_name)
 
                 row_num = center_cell(str(m["row_number"]), 3)
                 score = center_cell(f"{m['score']}/{num_conch}", 5)
@@ -414,20 +420,37 @@ def send_discord_notification(
 
             table_text = "```\n" + "\n".join(table_lines)[:1800] + "\n```"
 
+            embed["fields"].append({
+                "name": "📜 Historical Match Table",
+                "value": table_text,
+                "inline": False,
+            })
+
             if has_perfect_match:
+                distinct_winners = sorted(set(perfect_match_winners))
+                winners_text = ", ".join(f"**{winner}**" for winner in distinct_winners) or "(unknown)"
+
                 embed["fields"].append({
                     "name": "⚠️ Duplicate Detected",
-                    "value": f"Winner was: **{matched_rows[0]['row_data'][-1]}**",
-                    "inline": False,
-                })
-            else:
-                embed["fields"].append({
-                    "name": "📜 Historical Match Table",
-                    "value": table_text,
+                    "value": f"Perfect match winners: {winners_text}",
                     "inline": False,
                 })
 
-            embed["color"] = 0xFFFF00 if has_perfect_match else embed["color"]
+                if len(distinct_winners) >= 2:
+                    has_winner_conflict = True
+                    embed["fields"].append({
+                        "name": "🚨 Winner Conflict Warning",
+                        "value": (
+                            "Found multiple winners in perfect-match rows: "
+                            f"{winners_text}. Please verify historical data."
+                        ),
+                        "inline": False,
+                    })
+
+            if has_winner_conflict:
+                embed["color"] = 0xFF0000
+            elif has_perfect_match:
+                embed["color"] = 0xFFFF00
 
         payload = {"embeds": [embed]}
 
@@ -442,9 +465,20 @@ def send_discord_notification(
             response.raise_for_status()
 
             if has_perfect_match:
+                conflict_text = ""
+                if matched_rows:
+                    perfect_winners = sorted({
+                        (m["row_data"][-1] if m["row_data"] else "")
+                        for m in matched_rows
+                        if m.get("score") == PERFECT_MATCH_SCORE
+                        and (m["row_data"][-1] if m["row_data"] else "")
+                    })
+                    if len(perfect_winners) >= 2:
+                        conflict_text = "\n🚨 Multiple winners found: " + ", ".join(perfect_winners)
+
                 requests.post(
                     url,
-                    json={"content": "@everyone\n⚠️ Duplicate data detected!"},
+                    json={"content": "@everyone\n⚠️ Duplicate data detected!" + conflict_text},
                 )
 
             logging.info(f"Discord notification sent successfully to {url}")
