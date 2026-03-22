@@ -329,6 +329,7 @@ def send_discord_notification(
     ranking,
     debug=False,
     matched_rows=None,
+    allow_everyone_mentions=True,
 ):
     """
     data: OCR data
@@ -484,8 +485,9 @@ def send_discord_notification(
                 embed["color"] = 0xFFFF00
 
         payload = {"embeds": [embed]}
+        can_mention_everyone = bool(allow_everyone_mentions and not debug)
 
-        if has_perfect_match:
+        if has_perfect_match and can_mention_everyone:
             payload["allowed_mentions"] = {"parse": ["everyone"]}
 
         # =======================
@@ -501,7 +503,7 @@ def send_discord_notification(
                 )
             response.raise_for_status()
 
-            if has_perfect_match:
+            if has_perfect_match and can_mention_everyone:
                 conflict_text = ""
                 if matched_rows:
                     perfect_winners = sorted({

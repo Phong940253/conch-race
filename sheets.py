@@ -37,7 +37,17 @@ def find_first_empty_row_in_table(sheet, start_row=2, key_col=1):
     return len(col_values) + 1
 
 
-def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch, include_rate=False, prediction=None, check_duplicates=True):
+def save_to_sheet(
+    data,
+    worksheet_name,
+    credentials_path,
+    sheet_name,
+    list_conch,
+    include_rate=False,
+    prediction=None,
+    check_duplicates=True,
+    write_if_not_duplicate=True,
+):
     """Saves the OCR data to a Google Sheet."""
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -99,8 +109,8 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
                     })
             
             
-            # If no perfect match is found, append the new row
-            if best_score < len(list_conch):
+            # If no perfect match is found, append the new row (unless read-only mode)
+            if best_score < len(list_conch) and write_if_not_duplicate:
                 row_index = find_first_empty_row_in_table(sheet)
 
                 sheet.insert_row(
@@ -109,6 +119,11 @@ def save_to_sheet(data, worksheet_name, credentials_path, sheet_name, list_conch
                     value_input_option="USER_ENTERED"
                 )
                 logger.info("Saved new row to worksheet '%s'", worksheet_name)
+            elif best_score < len(list_conch) and not write_if_not_duplicate:
+                logger.info(
+                    "Read-only duplicate check enabled. Skipping write to worksheet '%s'",
+                    worksheet_name,
+                )
                     
             if best_score > 0:
                 logger.warning(

@@ -338,6 +338,18 @@ def run_ocr_process(
     duplicate_row: Optional[int] = None
     if debug:
         logging.info("Debug mode is enabled. Skipping save to Google Sheets.")
+        if ocr_data:
+            # Read-only duplicate scan for Discord table; never write in debug mode.
+            duplicate_row = save_to_sheet(
+                ocr_data,
+                WORKSHEET_NAME,
+                CREDENTIALS_PATH,
+                SHEET_NAME,
+                LIST_CONCH,
+                include_rate=False,
+                check_duplicates=True,
+                write_if_not_duplicate=False,
+            )
     elif ocr_data:
         duplicate_row = save_to_sheet(
             ocr_data,
@@ -493,6 +505,18 @@ def _run_single_ocr(args: argparse.Namespace) -> None:
     duplicate_row: Optional[int] = None
     if args.debug and not args.duplicate_check:
         logging.info("Debug mode is enabled. Skipping save to Google Sheets.")
+        if ocr_data:
+            # Read-only duplicate scan for Discord table; never write in debug mode.
+            duplicate_row = save_to_sheet(
+                ocr_data,
+                WORKSHEET_NAME,
+                CREDENTIALS_PATH,
+                SHEET_NAME,
+                LIST_CONCH,
+                include_rate=False,
+                check_duplicates=True,
+                write_if_not_duplicate=False,
+            )
     elif ocr_data:
         # Save to the sheet with emojis only, with duplicate checking
         duplicate_row = save_to_sheet(
