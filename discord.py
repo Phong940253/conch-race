@@ -64,6 +64,49 @@ def _split_discord_content(text: str, limit: int = 1900) -> List[str]:
     return chunks
 
 
+def _truncate_discord_text(text: object, limit: int) -> str:
+    """Truncate text to Discord-safe length with an ellipsis."""
+    s = "" if text is None else str(text)
+    if len(s) <= limit:
+        return s
+    if limit <= 1:
+        return s[:limit]
+    return s[: limit - 1] + "…"
+
+
+def _add_embed_field(embed: dict, name: object, value: object, inline: bool = False) -> None:
+    """Append a field while respecting Discord embed constraints."""
+    fields = embed.setdefault("fields", [])
+    if len(fields) >= 25:
+        return
+
+    safe_name = _truncate_discord_text(name, 256) or "-"
+    safe_value = _truncate_discord_text(value, 1024) or "-"
+    fields.append({"name": safe_name, "value": safe_value, "inline": inline})
+
+
+def _chunk_codeblock_lines(lines: List[str], max_chars: int = 1000) -> List[str]:
+    """Chunk lines into multiple code blocks that fit in embed field values."""
+    if not lines:
+        return ["```\n\n```"]
+
+    chunks: List[str] = []
+    current: List[str] = []
+
+    for line in lines:
+        candidate = "```\n" + "\n".join(current + [line]) + "\n```"
+        if len(candidate) > max_chars and current:
+            chunks.append("```\n" + "\n".join(current) + "\n```")
+            current = [line]
+        else:
+            current.append(line)
+
+    if current:
+        chunks.append("```\n" + "\n".join(current) + "\n```")
+
+    return chunks
+
+
 class DiscordWebhookLogHandler(logging.Handler):
     """Logging handler that posts logs to PANIC_WEBHOOK_URL.
 
@@ -312,21 +355,18 @@ def send_discord_notification(
         # OCR Results
         # =======================
         for name, info in data.items():
-            embed["fields"].append({
-                "name": name,
-                "value": f"Rate: {info['rate']} {info['emoji']}",
-                "inline": True,
-            })
+            _add_embed_field(
+                embed,
+                name,
+                f"Rate: {info['rate']} {info['emoji']}",
+                inline=True,
+            )
 
         # =======================
         # Prediction
         # =======================
         if prediction:
-            embed["fields"].append({
-                "name": "🔮 Predicted Winner",
-                "value": prediction,
-                "inline": False,
-            })
+            _add_embed_field(embed, "🔮 Predicted Winner", prediction, inline=False)
 
         # =======================
         # Duplicate Detection
@@ -343,19 +383,11 @@ def send_discord_notification(
             top_ranking = ranking[:6]
             ranking_text = format_ranking_with_gap(top_ranking)
 
-            embed["fields"].append({
-                "name": "📊 Rank & Confidence Gap",
-                "value": ranking_text,
-                "inline": False,
-            })
+            _add_embed_field(embed, "📊 Rank & Confidence Gap", ranking_text, inline=False)
             
             wsi_tables = format_wsi_padded(top_ranking)
 
-            embed["fields"].append({
-                "name": "💪 Win Strength Index (WSI)",
-                "value": wsi_tables,
-                "inline": False,
-            })
+            _add_embed_field(embed, "💪 Win Strength Index (WSI)", wsi_tables, inline=False)
             
         # =======================
         # Historical Match Table
@@ -418,34 +450,33 @@ def send_discord_notification(
 
                 table_lines.append(row_line)
 
-            table_text = "```\n" + "\n".join(table_lines)[:1800] + "\n```"
-
-            embed["fields"].append({
-                "name": "📜 Historical Match Table",
-                "value": table_text,
-                "inline": False,
-            })
+            table_chunks = _chunk_codeblock_lines(table_lines, max_chars=1000)
+            for i, table_text in enumerate(table_chunks):
+                field_name = "📜 Historical Match Table" if i == 0 else "📜 Historical Match Table (cont.)"
+                _add_embed_field(embed, field_name, table_text, inline=False)
 
             if has_perfect_match:
                 distinct_winners = sorted(set(perfect_match_winners))
                 winners_text = ", ".join(f"**{winner}**" for winner in distinct_winners) or "(unknown)"
 
-                embed["fields"].append({
-                    "name": "⚠️ Duplicate Detected",
-                    "value": f"Perfect match winners: {winners_text}",
-                    "inline": False,
-                })
+                _add_embed_field(
+                    embed,
+                    "⚠️ Duplicate Detected",
+                    f"Perfect match winners: {winners_text}",
+                    inline=False,
+                )
 
                 if len(distinct_winners) >= 2:
                     has_winner_conflict = True
-                    embed["fields"].append({
-                        "name": "🚨 Winner Conflict Warning",
-                        "value": (
+                    _add_embed_field(
+                        embed,
+                        "🚨 Winner Conflict Warning",
+                        (
                             "Found multiple winners in perfect-match rows: "
                             f"{winners_text}. Please verify historical data."
                         ),
-                        "inline": False,
-                    })
+                        inline=False,
+                    )
 
             if has_winner_conflict:
                 embed["color"] = 0xFF0000
@@ -461,7 +492,13 @@ def send_discord_notification(
         # Send to Discord
         # =======================
         for url in WEBHOOK_URL:
-            response = requests.post(url, json=payload)
+            response = requests.post(url, json=payload, timeout=15)
+            if response.status_code >= 400:
+                logging.error(
+                    "Discord webhook failed (%s): %s",
+                    response.status_code,
+                    response.text[:500],
+                )
             response.raise_for_status()
 
             if has_perfect_match:
@@ -478,7 +515,13 @@ def send_discord_notification(
 
                 requests.post(
                     url,
-                    json={"content": "@everyone\n⚠️ Duplicate data detected!" + conflict_text},
+                    json={
+                        "content": _truncate_discord_text(
+                            "@everyone\n⚠️ Duplicate data detected!" + conflict_text,
+                            1900,
+                        )
+                    },
+                    timeout=15,
                 )
 
             logging.info(f"Discord notification sent successfully to {url}")
